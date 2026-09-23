@@ -1,0 +1,1 @@
+import'dotenv/config';import{JourneyGuideResolver}from'../journey-guides/journey-guide.service.js';import{JourneyService}from'../journeys/journey.service.js';import{jobMain}from'./job-runner.js';await jobMain('journey-reminders',()=>new JourneyService(new JourneyGuideResolver()).processReminders());

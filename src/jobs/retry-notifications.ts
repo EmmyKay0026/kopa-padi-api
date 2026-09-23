@@ -1,0 +1,1 @@
+import'dotenv/config';import{retryQueuedEmails}from'../email/email.service.js';import{jobMain}from'./job-runner.js';await jobMain('notification-retry',()=>retryQueuedEmails(Number(process.env.NOTIFICATION_RETRY_BATCH_SIZE??25)));

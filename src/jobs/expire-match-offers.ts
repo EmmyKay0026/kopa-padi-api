@@ -1,0 +1,1 @@
+import'dotenv/config';import{GeographyService}from'../geography/geography.service.js';import{MatchingService}from'../matching/matching.service.js';import{jobMain}from'./job-runner.js';await jobMain('match-offers-expire',async()=>({expired:(await new MatchingService(new GeographyService()).expireOffers()).length}));

@@ -1,0 +1,1 @@
+import'dotenv/config';import{expireTravelPlans}from'../travel-plans/expire.js';import{jobMain}from'./job-runner.js';await jobMain('travel-plans-expire',async()=>({expired:(await expireTravelPlans()).length}));

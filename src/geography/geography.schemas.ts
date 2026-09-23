@@ -1,0 +1,8 @@
+import { z } from 'zod';
+const coordinate = z.coerce.number().finite();
+export const idSchema = z.string().min(2).max(64);
+export const compatibilityQuerySchema = z.object({ lgaA: idSchema, lgaB: idSchema });
+export const campSchema = z.object({ stateId: idSchema, lgaId: idSchema.nullish(), name: z.string().trim().min(2).max(200), officialAddress: z.string().trim().max(500).nullish(), latitude: coordinate.min(-90).max(90).nullish(), longitude: coordinate.min(-180).max(180).nullish(), status: z.enum(['ACTIVE','TEMPORARY','INACTIVE','UNKNOWN']), sourceReference: z.string().trim().max(500).nullish() });
+export const hubSchema = z.object({ name: z.string().trim().min(2).max(150), stateId: idSchema, lgaId: idSchema.nullish(), townId: z.string().uuid().nullish(), latitude: coordinate.min(-90).max(90).nullish(), longitude: coordinate.min(-180).max(180).nullish(), hubType: z.enum(['LOCAL','REGIONAL','INTERSTATE','DESTINATION_GATEWAY']), status: z.enum(['ACTIVE','INACTIVE','REVIEW_REQUIRED']) });
+export const coverageSchema = z.object({ lgaId: idSchema, estimatedMinutes: z.coerce.number().int().min(0).max(1440), isPrimary: z.boolean().default(false), source: z.enum(['OSRM','MANUAL_REVIEW','OPENSTREETMAP','IMPORTED_DATASET']) });
+export const proximitySchema = z.object({ lgaAId: idSchema, lgaBId: idSchema, estimatedRoadMinutes: z.coerce.number().int().min(0).max(1440), estimatedRoadDistanceKm: z.coerce.number().min(0).max(10000).nullish(), commonHubId: z.string().uuid().nullish(), source: z.enum(['OSRM','MANUAL_REVIEW','OPENSTREETMAP','IMPORTED_DATASET']) }).refine(x => x.lgaAId !== x.lgaBId, { message: 'LGAs must differ' });

@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788830786322,
+      "tag": "0000_oval_iron_fist",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788845165299,
+      "tag": "0001_ancient_wendell_vaughn",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788852648720,
+      "tag": "0002_foamy_fantastic_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788856283773,
+      "tag": "0003_lyrical_chameleon",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788858646120,
+      "tag": "0004_lying_gorgon",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788877988495,
+      "tag": "0005_ancient_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788880704164,
+      "tag": "0006_long_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788927031962,
+      "tag": "0007_abnormal_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788929465324,
+      "tag": "0008_grey_paibok",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788933468312,
+      "tag": "0009_medical_wilson_fisk",
+      "breakpoints": true
+    }
+  ]
+}

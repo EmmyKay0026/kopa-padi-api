@@ -1,0 +1,26 @@
+import type { GeographyService } from '../geography/geography.service.js';
+
+export type MatchPlan = {
+  id:string; userId:string; destinationCampId:string; originLgaId:string; originTownId:string|null;
+  intendedTravelDate:string; dateFlexibilityDays:number; departureWindow:'EARLY_MORNING'|'MORNING'|'LATE_MORNING'|'AFTERNOON'|'FLEXIBLE';
+  transportMode:'COMMERCIAL_BUS'|'TRAIN'|'FLIGHT'|'PRIVATE_VEHICLE'|'UNDECIDED'; transportFlexible:boolean; nearbyMatchingEnabled:boolean; groupPreference:'ANY_VERIFIED_PCM'; createdAt:Date;
+};
+export type OriginRelationship='SAME_TOWN'|'SAME_LGA'|'NEARBY_LGA'|'COMMON_HUB';
+export type PairResult={kind:'DIRECT'|'ALTERNATIVE'|'INCOMPATIBLE';score:number;label:'EXCELLENT'|'STRONG'|'NEARBY'|'ALTERNATIVE';originRelationship?:OriginRelationship;originHubId?:string|null;proposedTravelDate?:string;proposedDepartureWindow?:MatchPlan['departureWindow'];proposedTransportMode?:MatchPlan['transportMode'];offerType?:'ALTERNATIVE_DATE'|'ALTERNATIVE_TIME'|'ALTERNATIVE_TRANSPORT'};
+const windows:MatchPlan['departureWindow'][]=['EARLY_MORNING','MORNING','LATE_MORNING','AFTERNOON'];
+const day=(value:string,delta:number)=>{const date=new Date(`${value}T00:00:00Z`);date.setUTCDate(date.getUTCDate()+delta);return date.toISOString().slice(0,10)};
+export function sharedDate(a:MatchPlan,b:MatchPlan){const values:string[]=[];for(let i=-a.dateFlexibilityDays;i<=a.dateFlexibilityDays;i++){const value=day(a.intendedTravelDate,i);const distance=Math.abs((Date.parse(`${value}T00:00:00Z`)-Date.parse(`${b.intendedTravelDate}T00:00:00Z`))/86_400_000);if(distance<=b.dateFlexibilityDays)values.push(value)}return values.sort((x,y)=>{const cost=(v:string)=>Math.abs(Date.parse(v)-Date.parse(a.intendedTravelDate))+Math.abs(Date.parse(v)-Date.parse(b.intendedTravelDate));return cost(x)-cost(y)||x.localeCompare(y)})[0]??null}
+export function departureCompatibility(a:MatchPlan['departureWindow'],b:MatchPlan['departureWindow']){if(a===b)return{compatible:true,score:20,window:a};if(a==='FLEXIBLE')return{compatible:true,score:12,window:b};if(b==='FLEXIBLE')return{compatible:true,score:12,window:a};if(Math.abs(windows.indexOf(a)-windows.indexOf(b))===1)return{compatible:true,score:14,window:windows[Math.min(windows.indexOf(a),windows.indexOf(b))]!};return{compatible:false,score:0,window:a}}
+export function transportCompatibility(a:MatchPlan,b:MatchPlan){if(a.transportMode==='PRIVATE_VEHICLE'||b.transportMode==='PRIVATE_VEHICLE')return{kind:'INCOMPATIBLE' as const,score:0};if(a.transportMode===b.transportMode)return{kind:'DIRECT' as const,score:15,mode:a.transportMode};if(a.transportMode==='UNDECIDED')return{kind:'DIRECT' as const,score:10,mode:b.transportMode};if(b.transportMode==='UNDECIDED')return{kind:'DIRECT' as const,score:10,mode:a.transportMode};if(a.transportFlexible||b.transportFlexible)return{kind:'DIRECT' as const,score:5,mode:a.transportFlexible?b.transportMode:a.transportMode};return{kind:'INCOMPATIBLE' as const,score:0}}
+export async function evaluatePair(a:MatchPlan,b:MatchPlan,geography:Pick<GeographyService,'evaluate'>):Promise<PairResult>{
+  if(a.userId===b.userId||a.destinationCampId!==b.destinationCampId||a.groupPreference!==b.groupPreference)return{kind:'INCOMPATIBLE',score:0,label:'ALTERNATIVE'};
+  let originRelationship:OriginRelationship;let originScore=0;let originHubId:string|null=null;
+  if(a.originTownId&&a.originTownId===b.originTownId){originRelationship='SAME_TOWN';originScore=35}
+  else if(a.originLgaId===b.originLgaId){originRelationship='SAME_LGA';originScore=30}
+  else{if(!a.nearbyMatchingEnabled||!b.nearbyMatchingEnabled)return{kind:'INCOMPATIBLE',score:0,label:'ALTERNATIVE'};const origin=await geography.evaluate(a.originLgaId,b.originLgaId);if(!origin.compatible||!['NEARBY_LGA','COMMON_HUB'].includes(origin.relationship))return{kind:'INCOMPATIBLE',score:0,label:'ALTERNATIVE'};originRelationship=origin.relationship as OriginRelationship;originHubId=origin.commonHubId;originScore=origin.relationship==='COMMON_HUB'?15:(origin.estimatedRoadMinutes??61)<=30?25:20}
+  const shared=sharedDate(a,b);if(!shared)return{kind:'INCOMPATIBLE',score:0,label:'ALTERNATIVE'};
+  const departure=departureCompatibility(a.departureWindow,b.departureWindow);const departureAlternative=!departure.compatible;
+  const transport=transportCompatibility(a,b);if(transport.kind==='INCOMPATIBLE')return{kind:'INCOMPATIBLE',score:0,label:'ALTERNATIVE'};
+  const sameDate=a.intendedTravelDate===b.intendedTravelDate;const alternative=departureAlternative;const dateDistance=Math.max(Math.abs((Date.parse(shared)-Date.parse(a.intendedTravelDate))/86_400_000),Math.abs((Date.parse(shared)-Date.parse(b.intendedTravelDate))/86_400_000));const score=originScore+(sameDate?25:dateDistance<=1?18:10)+departure.score+transport.score+5;
+  return{kind:alternative?'ALTERNATIVE':'DIRECT',score,label:alternative?'ALTERNATIVE':originRelationship==='SAME_TOWN'&&score>=95?'EXCELLENT':originRelationship==='NEARBY_LGA'||originRelationship==='COMMON_HUB'?'NEARBY':'STRONG',originRelationship,originHubId,proposedTravelDate:shared,proposedDepartureWindow:departureAlternative?b.departureWindow:departure.window,proposedTransportMode:transport.mode,offerType:departureAlternative?'ALTERNATIVE_TIME':undefined};
+}

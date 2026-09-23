@@ -1,0 +1,2 @@
+ALTER TABLE "circle_message" DROP CONSTRAINT "circle_message_sender_check";--> statement-breakpoint
+ALTER TABLE "circle_message" ADD CONSTRAINT "circle_message_sender_check" CHECK ("circle_message"."type" = 'TEXT' OR "circle_message"."sender_user_id" IS NULL);

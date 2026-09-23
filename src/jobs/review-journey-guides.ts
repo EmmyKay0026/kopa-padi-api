@@ -1,0 +1,1 @@
+import'dotenv/config';import{JourneyGuideResolver,JourneyGuideService}from'../journey-guides/journey-guide.service.js';import{jobMain}from'./job-runner.js';await jobMain('guides-review',()=>new JourneyGuideService(new JourneyGuideResolver()).flagStale());

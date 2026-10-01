@@ -7,6 +7,7 @@ type AuthRequest=FastifyRequest&{user:RequestUser};
 export class MatchingController {
   constructor(private readonly matching:MatchingService){}
   @Get('matching/status') status(@Req()req:AuthRequest){return this.matching.status(req.user.id)}
+  @Post('matching/rematch') rematch(@Req()req:AuthRequest){return this.matching.requestRematch(req.user.id)}
   @Get('match-offers') offers(@Req()req:AuthRequest){return this.matching.offers(req.user.id)}
   @Get('match-offers/:id') offer(@Req()req:AuthRequest,@Param('id',ParseUUIDPipe)id:string){return this.matching.offer(req.user.id,id)}
   @Post('match-offers/:id/accept') accept(@Req()req:AuthRequest,@Param('id',ParseUUIDPipe)id:string){return this.matching.accept(req.user.id,id)}

@@ -48,6 +48,12 @@ import { matchingIsClosed } from "../circles/circle.domain.js";
 
 const ACTIVE_MEMBERS = ["JOINED", "CONFIRMED"] as const;
 const OPEN_CIRCLES = ["FORMING", "READY"] as const;
+const MATCH_EVENTS = [
+  "TravelPlanCreated",
+  "TravelPlanUpdated",
+  "TravelPlanRematchRequested",
+] as const;
+const REMATCH_COOLDOWN_MS = 60_000;
 const addDays = (value: string, days: number) => {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -672,13 +678,124 @@ export class MatchingService {
       )
       .orderBy(desc(matchOffers.createdAt))
       .limit(1);
+    const [pendingMatch] = await db
+      .select({ id: domainOutbox.id })
+      .from(domainOutbox)
+      .where(
+        and(
+          eq(domainOutbox.aggregateType, "TRAVEL_PLAN"),
+          eq(domainOutbox.aggregateId, plan.id),
+          inArray(domainOutbox.eventType, [...MATCH_EVENTS]),
+          isNull(domainOutbox.processedAt),
+        ),
+      )
+      .limit(1);
     return {
       status: membership?.circle.status ?? plan.status,
       planId: plan.id,
       circle: membership?.circle ?? null,
       alternativeOfferAvailable: Boolean(offer),
+      matchingInProgress: Boolean(pendingMatch),
     };
   }
+
+  async requestRematch(userId: string) {
+    return db.transaction(async (tx: any) => {
+      const [activePlan] = await tx
+        .select({ id: travelPlans.id })
+        .from(travelPlans)
+        .where(
+          and(
+            eq(travelPlans.userId, userId),
+            eq(travelPlans.status, "SEARCHING"),
+          ),
+        )
+        .limit(1);
+      if (!activePlan)
+        throw new ConflictException("No searching Travel Plan is available");
+
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`rematch:${activePlan.id}`}))`,
+      );
+      const plan = await this.eligiblePlan(tx, activePlan.id);
+      if (!plan)
+        throw new ForbiddenException(
+          "This Travel Plan is not currently eligible for matching",
+        );
+
+      const [[membership], [offer], [pendingMatch]] = await Promise.all([
+        tx
+          .select({ id: travelCircleMembers.id })
+          .from(travelCircleMembers)
+          .where(
+            and(
+              eq(travelCircleMembers.travelPlanId, plan.id),
+              inArray(travelCircleMembers.membershipStatus, [...ACTIVE_MEMBERS]),
+            ),
+          )
+          .limit(1),
+        tx
+          .select({ id: matchOffers.id })
+          .from(matchOffers)
+          .where(
+            and(
+              eq(matchOffers.travelPlanId, plan.id),
+              eq(matchOffers.status, "PENDING"),
+              gt(matchOffers.expiresAt, new Date()),
+            ),
+          )
+          .limit(1),
+        tx
+          .select({ id: domainOutbox.id })
+          .from(domainOutbox)
+          .where(
+            and(
+              eq(domainOutbox.aggregateType, "TRAVEL_PLAN"),
+              eq(domainOutbox.aggregateId, plan.id),
+              inArray(domainOutbox.eventType, [...MATCH_EVENTS]),
+              isNull(domainOutbox.processedAt),
+            ),
+          )
+          .limit(1),
+      ]);
+      if (membership)
+        throw new ConflictException("This Travel Plan is already matched");
+      if (offer)
+        throw new ConflictException(
+          "Respond to the pending match offer before searching again",
+        );
+      if (pendingMatch)
+        return { status: "ALREADY_IN_PROGRESS" as const, retryAfterSeconds: 0 };
+
+      const [recentRematch] = await tx
+        .select({ createdAt: domainOutbox.createdAt })
+        .from(domainOutbox)
+        .where(
+          and(
+            eq(domainOutbox.aggregateType, "TRAVEL_PLAN"),
+            eq(domainOutbox.aggregateId, plan.id),
+            eq(domainOutbox.eventType, "TravelPlanRematchRequested"),
+            gt(domainOutbox.createdAt, new Date(Date.now() - REMATCH_COOLDOWN_MS)),
+          ),
+        )
+        .orderBy(desc(domainOutbox.createdAt))
+        .limit(1);
+      if (recentRematch) {
+        const elapsed = Date.now() - recentRematch.createdAt.getTime();
+        return {
+          status: "COOLDOWN" as const,
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil((REMATCH_COOLDOWN_MS - elapsed) / 1000),
+          ),
+        };
+      }
+
+      await this.outbox(tx, "TravelPlanRematchRequested", plan.id, userId);
+      return { status: "QUEUED" as const, retryAfterSeconds: 0 };
+    });
+  }
+
   async currentCircle(userId: string) {
     const [row] = await db
       .select({ circle: travelCircles, membership: travelCircleMembers })

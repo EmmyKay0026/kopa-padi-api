@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+*.env
+.env.production
+private/
+playwright-report/
+test-results/
+*.log
+.tmp-edge-cdp-2/
+DEPLOYMENT.md
+*.md

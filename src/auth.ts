@@ -7,6 +7,25 @@ import * as schema from "./db/schema.js";
 import { queueEmail } from "./email/email.service.js";
 validateEnvironment();
 
+function verificationUrlForFrontend(url: string) {
+  const verificationUrl = new URL(url);
+  const requestedDestination =
+    verificationUrl.searchParams.get("callbackURL") ?? "/verification";
+  const destination =
+    requestedDestination.startsWith("/") &&
+    !requestedDestination.startsWith("//")
+      ? requestedDestination
+      : "/verification";
+  const loginUrl = new URL(
+    "/login",
+    process.env.WEB_URL ?? "http://localhost:3000",
+  );
+  loginUrl.searchParams.set("verified", "true");
+  loginUrl.searchParams.set("next", destination);
+  verificationUrl.searchParams.set("callbackURL", loginUrl.toString());
+  return verificationUrl.toString();
+}
+
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:4000",
   basePath: "/api/auth",
@@ -64,7 +83,7 @@ export const auth = betterAuth({
         to: user.email,
         intent: "ACCOUNT_VERIFICATION",
         subject: "Verify your Kopa Padi email",
-        text: `Verify your email: ${url}`,
+        text: `Verify your email: ${verificationUrlForFrontend(url)}`,
       }),
   },
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },

@@ -2,8 +2,8 @@
 deployment:
   tasks:
     - echo "=== Deploying Kopa Padi API ==="
-    - cd /home/thebqbgc/repositories/kopa-padi-api && npm ci
-    - cd /home/thebqbgc/repositories/kopa-padi-api && npm run build
+    - cd /home/thebqbgc/repositories/kopa-padi-api && source /home/thebqbgc/nodevenv/repositories/kopa-padi-api/22/bin/activate && NODE_ENV=development npm install --include=dev --no-audit --no-fund
+    - cd /home/thebqbgc/repositories/kopa-padi-api && source /home/thebqbgc/nodevenv/repositories/kopa-padi-api/22/bin/activate && npm run build
     - mkdir -p /home/thebqbgc/repositories/kopa-padi-api/tmp
     - touch /home/thebqbgc/repositories/kopa-padi-api/tmp/restart.txt
     - echo "=== API deployment complete ==="

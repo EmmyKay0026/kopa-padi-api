@@ -361,6 +361,51 @@ suite.sequential("Matching PostgreSQL integration", () => {
       "INELIGIBLE",
     );
   });
+
+  it("prevents joining a Circle outside the agreed date window", async () => {
+    const first = await makePlan({
+      date: "2098-08-14",
+      flex: 2,
+    });
+
+    const second = await makePlan({
+      date: "2098-08-15",
+      flex: 2,
+    });
+
+    await matching.processPlan(first.planId);
+    await matching.processPlan(second.planId);
+
+    const [circle] = await db
+      .select()
+      .from(travelCircles)
+      .where(eq(travelCircles.travelDate, "2098-08-14"));
+
+    expect(circle).toBeDefined();
+    expect(circle!.memberCount).toBe(2);
+
+    const third = await makePlan({
+      date: "2098-08-16",
+      flex: 0,
+    });
+
+    await matching.processPlan(third.planId);
+
+    const [updatedCircle] = await db
+      .select()
+      .from(travelCircles)
+      .where(eq(travelCircles.id, circle!.id));
+
+    expect(updatedCircle.memberCount).toBe(2);
+
+    const [thirdPlan] = await db
+      .select()
+      .from(travelPlans)
+      .where(eq(travelPlans.id, third.planId));
+
+    expect(thirdPlan.status).toBe("SEARCHING");
+  });
+
   it("respects reusable matching restrictions", async () => {
     const restricted = await makePlan({ date: "2098-07-14" });
     const peer = await makePlan({ date: "2098-07-14" });

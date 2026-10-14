@@ -17,6 +17,11 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import {
+  circleSystemMessage,
+  ensureConversation,
+} from "../circles/circle-events.js";
+import { matchingIsClosed } from "../circles/circle.domain.js";
 import { db } from "../db/database.js";
 import {
   circleConversations,
@@ -40,11 +45,6 @@ import {
   MatchPlan,
   PairResult,
 } from "./matching.compatibility.js";
-import {
-  circleSystemMessage,
-  ensureConversation,
-} from "../circles/circle-events.js";
-import { matchingIsClosed } from "../circles/circle.domain.js";
 
 const ACTIVE_MEMBERS = ["JOINED", "CONFIRMED"] as const;
 const OPEN_CIRCLES = ["FORMING", "READY"] as const;
@@ -59,6 +59,24 @@ const addDays = (value: string, days: number) => {
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 };
+
+function permitsCircleDate(
+  plan: {
+    intendedTravelDate: string;
+    dateFlexibilityDays: number;
+  },
+  circleDate: string,
+): boolean {
+  const intended = Date.parse(`${plan.intendedTravelDate}T00:00:00Z`);
+  const agreed = Date.parse(`${circleDate}T00:00:00Z`);
+
+  return (
+    Number.isFinite(intended) &&
+    Number.isFinite(agreed) &&
+    Math.abs(agreed - intended) <= plan.dateFlexibilityDays * 86_400_000
+  );
+}
+
 const asPlan = (plan: typeof travelPlans.$inferSelect): MatchPlan => ({
   ...plan,
   originTownId: plan.originTownId ?? null,
@@ -271,8 +289,16 @@ export class MatchingService {
               ),
             );
         let score = 100;
+        // let okay =
+        //   members.length > 0 &&
+        //   !(await this.blockedAny(
+        //     tx,
+        //     plan.userId,
+        //     members.map((member) => member.plan.userId),
+        //   ));
         let okay =
           members.length > 0 &&
+          permitsCircleDate(plan, circle.travelDate) &&
           !(await this.blockedAny(
             tx,
             plan.userId,
@@ -280,6 +306,10 @@ export class MatchingService {
           ));
         for (const member of members) {
           if (!okay) break;
+          if (!permitsCircleDate(member.plan, circle.travelDate)) {
+            okay = false;
+            break;
+          }
           const match = await evaluatePair(
             asPlan(plan),
             asPlan(member.plan),

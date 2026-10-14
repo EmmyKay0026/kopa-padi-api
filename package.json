@@ -24,7 +24,8 @@
     "circles:lock": "tsx src/jobs/lock-circles.ts",
     "circles:confirm": "tsx src/jobs/request-travel-confirmations.ts",
     "journeys:remind": "tsx src/jobs/process-journey-reminders.ts",
-    "guides:review": "tsx src/jobs/review-journey-guides.ts"
+    "guides:review": "tsx src/jobs/review-journey-guides.ts",
+    "camps:import": "tsx src/db/import-orientation-camps.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

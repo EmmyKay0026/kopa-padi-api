@@ -22,6 +22,7 @@ import { calculateExpiry } from "./travel-plan.domain.js";
 import { MatchingService } from "../matching/matching.service.js";
 import { enabled } from '../config/runtime.js';
 type Input = {
+  destinationCampId: string;
   originStateId: string;
   originLgaId: string;
   originTownId?: string | null;
@@ -55,7 +56,10 @@ export class TravelPlanService {
     if(!enabled('TRAVEL_PLAN_CREATION_ENABLED',true))throw new ForbiddenException('Travel Plan creation is temporarily unavailable during the pilot');
     const [restriction]=await db.select({id:accountRestrictions.id}).from(accountRestrictions).where(and(eq(accountRestrictions.userId,userId),inArray(accountRestrictions.restrictionType,['TRAVEL_PLAN_DISABLED','VERIFICATION_REVIEW_REQUIRED','ACCOUNT_SUSPENDED']),eq(accountRestrictions.status,'ACTIVE'))).limit(1);
     if(restriction)throw new ForbiddenException('Travel Plan creation is unavailable for this account');
-    const geography = await this.validateGeography(input);
+    const [geography, destination] = await Promise.all([
+      this.validateGeography(input),
+      this.validateDestination(input.destinationCampId),
+    ]);
     const [verification] = await db
       .select()
       .from(pcmVerifications)
@@ -84,7 +88,7 @@ export class TravelPlanService {
             originStateId: geography.state.id,
             originLgaId: geography.lga.id,
             originTownId: geography.town?.id ?? null,
-            destinationCampId: verification.pcm_verification.orientationCampId,
+            destinationCampId: destination.id,
             intendedTravelDate: input.intendedTravelDate,
             dateFlexibilityDays: input.dateFlexibilityDays,
             departureWindow: input.departureWindow,
@@ -168,8 +172,12 @@ export class TravelPlanService {
     const current = await this.ownedDetail(userId, id);
     if (!["SEARCHING", "IN_CIRCLE"].includes(current.plan.status))
       throw new ConflictException("This Travel Plan cannot be edited");
-    const geography = await this.validateGeography(input);
+    const [geography, destination] = await Promise.all([
+      this.validateGeography(input),
+      this.validateDestination(input.destinationCampId),
+    ]);
     const values = {
+      destinationCampId: destination.id,
       originStateId: geography.state.id,
       originLgaId: geography.lga.id,
       originTownId: geography.town?.id ?? null,
@@ -266,7 +274,20 @@ export class TravelPlanService {
     });
     return this.ownedDetail(userId, id);
   }
-  private async validateGeography(input: Input) {
+  private async validateDestination(id: string) {
+    const [camp] = await db
+      .select()
+      .from(orientationCamps)
+      .where(
+        and(
+          eq(orientationCamps.id, id),
+          inArray(orientationCamps.status, ["ACTIVE", "TEMPORARY"]),
+        ),
+      )
+      .limit(1);
+    if (!camp) throw new NotFoundException("Operational orientation camp not found");
+    return camp;
+  }  private async validateGeography(input: Input) {
     const [[state], [lga], [town]] = await Promise.all([
       db
         .select()

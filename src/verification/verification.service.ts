@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/database.js';
 import { auditLogs, nyscIntakes, orientationCamps, pcmProfiles, pcmVerifications, users, verificationDocuments } from '../db/schema.js';
 import { assertTransition, VerificationStatus } from '../domain.js';
@@ -24,7 +24,7 @@ export class VerificationService {
     return profile;
   }
   async catalog() {
-    const [intakes, camps] = await Promise.all([db.select().from(nyscIntakes).where(eq(nyscIntakes.status, 'ACTIVE')), db.select().from(orientationCamps).where(eq(orientationCamps.status, 'ACTIVE'))]);
+    const [intakes, camps] = await Promise.all([db.select().from(nyscIntakes).where(eq(nyscIntakes.status, 'ACTIVE')), db.select().from(orientationCamps).where(inArray(orientationCamps.status, ['ACTIVE','TEMPORARY']))]);
     return { intakes, camps };
   }
   async status(userId: string) {
@@ -36,7 +36,7 @@ export class VerificationService {
   async submit(userId: string, input: { nyscIntakeId: string; orientationCampId: string }, file: { buffer: Buffer; filename: string }) {
     const [[profile], [intake], [camp], [current]] = await Promise.all([
       db.select().from(pcmProfiles).where(eq(pcmProfiles.userId, userId)).limit(1), db.select().from(nyscIntakes).where(and(eq(nyscIntakes.id, input.nyscIntakeId), eq(nyscIntakes.status, 'ACTIVE'))).limit(1),
-      db.select().from(orientationCamps).where(and(eq(orientationCamps.id, input.orientationCampId), eq(orientationCamps.status, 'ACTIVE'))).limit(1), db.select().from(pcmVerifications).where(eq(pcmVerifications.userId, userId)).orderBy(desc(pcmVerifications.updatedAt)).limit(1),
+      db.select().from(orientationCamps).where(and(eq(orientationCamps.id, input.orientationCampId), inArray(orientationCamps.status, ['ACTIVE','TEMPORARY']))).limit(1), db.select().from(pcmVerifications).where(eq(pcmVerifications.userId, userId)).orderBy(desc(pcmVerifications.updatedAt)).limit(1),
     ]);
     if (!profile) throw new ConflictException('Complete your PCM profile first');
     if (!intake || !camp) throw new NotFoundException('Active intake or camp not found');
@@ -58,7 +58,7 @@ export class VerificationService {
         return updated;
       });
       const [user] = await db.select().from(users).where(eq(users.id, userId));
-      this.email.dispatch({ userId, to: user.email, intent: 'PCM_SUBMITTED', subject: 'PCM verification submitted', text: 'Your PCM verification was submitted and is awaiting review.' });
+      this.email.dispatch({ userId, to: user.email, intent: 'PCM_SUBMITTED', subject: 'We received your verification', text: 'Your PCM verification has been submitted successfully. Our team will review it and email you when a decision is ready.', recipientName: user.name });
       return verification;
     } catch (error) { await this.storage.remove(stored.storageKey); throw error; }
   }
@@ -90,9 +90,9 @@ export class VerificationService {
       return updated;
     });
     const [user] = await db.select().from(users).where(eq(users.id, result.userId));
-    if (target === 'VERIFIED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_APPROVED', subject: 'PCM verification approved', text: 'Your PCM verification was approved.' });
-    if (target === 'REJECTED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_REJECTED', subject: 'PCM verification decision', text: data.userSafeReason ?? 'We could not verify your submission.' });
-    if (target === 'RESUBMISSION_REQUIRED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_RESUBMISSION_REQUIRED', subject: 'PCM verification needs attention', text: data.userSafeReason ?? 'Please submit updated evidence.' });
+    if (target === 'VERIFIED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_APPROVED', subject: 'You’re verified on Kopa Padi', text: 'Good news—your PCM verification has been approved. Your verified status is now active.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'View verification' });
+    if (target === 'REJECTED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_REJECTED', subject: 'Update on your Kopa Padi verification', text: data.userSafeReason ?? 'We were unable to verify your submission. Sign in to review the decision and available next steps.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Review decision' });
+    if (target === 'RESUBMISSION_REQUIRED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_RESUBMISSION_REQUIRED', subject: 'Action needed: update your verification', text: data.userSafeReason ?? 'We need updated information to complete your verification. Sign in to review the request and upload your documents.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Update verification' });
     return result;
   }
   async document(id: string, documentId: string, actorId: string) {

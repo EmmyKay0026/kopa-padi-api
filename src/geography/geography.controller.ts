@@ -16,6 +16,7 @@ export class GeographyController {
   @Get('travel-hubs') hubs() { return this.geography.hubs(); }
   @Get('travel-hubs/:id') hub(@Param('id', ParseUUIDPipe) id: string) { return this.geography.hub(id); }
 
+  @Get('admin/geography/camps') @AdminOnly() adminCamps() { return this.geography.camps(false); }
   @Get('admin/geography/proximities') @AdminOnly() proximities() { return this.geography.proximities(); }
   @Get('admin/geography/compatibility') @AdminOnly() compatibility(@Query(new ZodPipe(compatibilityQuerySchema)) query: any) { return this.geography.evaluate(query.lgaA, query.lgaB); }
   @Post('admin/geography/proximities') @AdminOnly() createProximity(@Body(new ZodPipe(proximitySchema)) body: any) { return this.geography.saveProximity(null, body); }

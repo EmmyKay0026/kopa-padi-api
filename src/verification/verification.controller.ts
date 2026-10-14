@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
-import { AdminOnly, Public, RequestUser, VerifiedPCMOnly } from '../common/auth.guard.js';
+import { AdminOnly, Public, RequestUser, RequiresCapability, VerifiedPCMOnly } from '../common/auth.guard.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { profileSchema, queueSchema, reviewSchema } from './verification.schemas.js';
 import { VerificationService } from './verification.service.js';
@@ -54,7 +54,7 @@ export class VerificationController {
     if (body.expectedStatus !== 'UNDER_REVIEW' || !body.reasonCode || !body.userSafeReason) throw new BadRequestException('Resubmission requires expectedStatus, reasonCode, and a user-safe reason');
     return this.service.transition(id, req.user.id, 'UNDER_REVIEW', 'RESUBMISSION_REQUIRED', body);
   }
-  @Get('admin/verifications/:id/documents/:documentId') @AdminOnly()
+  @Get('admin/verifications/:id/documents/:documentId') @AdminOnly() @RequiresCapability('verification.review')
   async document(@Param('id', ParseUUIDPipe) id: string, @Param('documentId', ParseUUIDPipe) documentId: string, @Req() req: AuthRequest, @Res() reply: FastifyReply) {
     const doc = await this.service.document(id, documentId, req.user.id);
     return reply.header('content-type', doc.mimeType).header('content-disposition', `attachment; filename="${doc.filename.replace(/["\r\n]/g, '_')}"`).header('cache-control', 'no-store').send(doc.buffer);

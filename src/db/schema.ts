@@ -63,7 +63,7 @@ export const users = pgTable('user', {
   lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [uniqueIndex('user_email_lower_unique').on(sql`lower(${t.email})`)]);
 export const sessions = pgTable('session', {
   id: uuid().defaultRandom().primaryKey(), expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), token: text().notNull().unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

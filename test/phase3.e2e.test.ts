@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db, pool } from '../src/db/database.js';
 import { nyscIntakes, orientationCamps, pcmVerifications, towns, users } from '../src/db/schema.js';
 import { GeographyService } from '../src/geography/geography.service.js';
@@ -22,6 +22,7 @@ const userIds = {} as Record<Identity, string>;
 const cookies = {} as Record<Identity, string>;
 let intakeId = '';
 let campId = '';
+let selectedDestinationCampId = '';
 let stateId = '';
 let lgaId = '';
 let townId = '';
@@ -58,6 +59,7 @@ async function signUp(identity: Identity) {
 
 function plan(overrides: Record<string, unknown> = {}) {
   return {
+    destinationCampId: selectedDestinationCampId,
     originStateId: stateId,
     originLgaId: lgaId,
     originTownId: townId,
@@ -76,10 +78,18 @@ suite.sequential('Phase 3 authenticated HTTP E2E', () => {
   beforeAll(async () => {
     for (const identity of Object.keys(identities) as Identity[]) await signUp(identity);
     const [intake] = await db.select().from(nyscIntakes).limit(1);
-    const [camp] = await db.select().from(orientationCamps).limit(1);
+    const [camp] = await db.select().from(orientationCamps).where(inArray(orientationCamps.status, ['ACTIVE', 'TEMPORARY'])).limit(1);
+    if (!camp) throw new Error('The E2E database needs at least one operational camp');
     const [town] = await db.select().from(towns).limit(1);
     intakeId = intake.id;
     campId = camp.id;
+    // Exercise an alternative operational destination when fixtures offer one.
+    // Otherwise, preserve the single-camp test environment.
+    const [alternateCamp] = await db.select({ id: orientationCamps.id })
+      .from(orientationCamps)
+      .where(and(inArray(orientationCamps.status, ['ACTIVE', 'TEMPORARY']), ne(orientationCamps.id, campId)))
+      .limit(1);
+    selectedDestinationCampId = alternateCamp?.id ?? campId;
     townId = town.id;
     lgaId = town.lgaId;
     const locationResponse = await request(`/locations/lgas/${lgaId}/towns`, 'grace');
@@ -104,15 +114,17 @@ suite.sequential('Phase 3 authenticated HTTP E2E', () => {
     }
   });
 
-  it('rejects destination tampering and creates the server-derived SEARCHING plan', async () => {
-    const tampered = await request('/travel-plans', 'grace', { method: 'POST', body: JSON.stringify(plan({ destinationCampId: crypto.randomUUID() })) });
-    expect(tampered.status).toBe(400);
+  it('validates a chosen operational destination and creates a SEARCHING plan', async () => {
+    const missingDestination = await request('/travel-plans', 'grace', { method: 'POST', body: JSON.stringify(plan({ destinationCampId: undefined })) });
+    expect(missingDestination.status).toBe(400);
+    const unknownDestination = await request('/travel-plans', 'grace', { method: 'POST', body: JSON.stringify(plan({ destinationCampId: crypto.randomUUID() })) });
+    expect(unknownDestination.status).toBe(404);
     const created = await request('/travel-plans', 'grace', { method: 'POST', body: JSON.stringify(plan()) });
     expect(created.status).toBe(201);
     const body = await created.json();
     expect(body.plan.status).toBe('SEARCHING');
-    expect(body.plan.destinationCampId).toBe(campId);
-    expect(body.destination.id).toBe(campId);
+    expect(body.plan.destinationCampId).toBe(selectedDestinationCampId);
+    expect(body.destination.id).toBe(selectedDestinationCampId);
     gracePlanId = body.plan.id;
   });
 

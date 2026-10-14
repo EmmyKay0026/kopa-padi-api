@@ -1,1 +1,1 @@
-CREATE UNIQUE INDEX IF NOT EXISTS user_email_lower_unique ON "user" (lower(email));`n
+CREATE UNIQUE INDEX "user_email_lower_unique" ON "user" USING btree (lower("email"));

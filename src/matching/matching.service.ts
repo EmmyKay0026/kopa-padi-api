@@ -487,15 +487,13 @@ export class MatchingService {
           .returning();
         if (!updated)
           throw new ConflictException("Circle capacity changed concurrently");
-        await tx
-          .insert(travelCircleMembers)
-          .values(
-            chosen.map((plan) => ({
-              travelCircleId: circle.id,
-              travelPlanId: plan.id,
-              userId: plan.userId,
-            })),
-          );
+        await tx.insert(travelCircleMembers).values(
+          chosen.map((plan) => ({
+            travelCircleId: circle.id,
+            travelPlanId: plan.id,
+            userId: plan.userId,
+          })),
+        );
         await tx
           .update(travelPlans)
           .set({ status: "IN_CIRCLE", updatedAt: new Date() })
@@ -525,7 +523,7 @@ export class MatchingService {
       while (available.length >= 2) {
         const first = available.shift()!;
         const chunk = [first];
-        for (let index = 0; index < available.length && chunk.length < 6;) {
+        for (let index = 0; index < available.length && chunk.length < 6; ) {
           const candidate = available[index]!;
           if (
             chunk.every((member) => !blocked(candidate.userId, member.userId))
@@ -585,15 +583,13 @@ export class MatchingService {
         maxMembers: 6,
       })
       .returning();
-    await tx
-      .insert(travelCircleMembers)
-      .values(
-        plans.map((plan) => ({
-          travelCircleId: circle.id,
-          travelPlanId: plan.id,
-          userId: plan.userId,
-        })),
-      );
+    await tx.insert(travelCircleMembers).values(
+      plans.map((plan) => ({
+        travelCircleId: circle.id,
+        travelPlanId: plan.id,
+        userId: plan.userId,
+      })),
+    );
     const updated = await tx
       .update(travelPlans)
       .set({ status: "IN_CIRCLE", updatedAt: new Date() })
@@ -730,7 +726,9 @@ export class MatchingService {
           .where(
             and(
               eq(travelCircleMembers.travelPlanId, plan.id),
-              inArray(travelCircleMembers.membershipStatus, [...ACTIVE_MEMBERS]),
+              inArray(travelCircleMembers.membershipStatus, [
+                ...ACTIVE_MEMBERS,
+              ]),
             ),
           )
           .limit(1),
@@ -775,7 +773,10 @@ export class MatchingService {
             eq(domainOutbox.aggregateType, "TRAVEL_PLAN"),
             eq(domainOutbox.aggregateId, plan.id),
             eq(domainOutbox.eventType, "TravelPlanRematchRequested"),
-            gt(domainOutbox.createdAt, new Date(Date.now() - REMATCH_COOLDOWN_MS)),
+            gt(
+              domainOutbox.createdAt,
+              new Date(Date.now() - REMATCH_COOLDOWN_MS),
+            ),
           ),
         )
         .orderBy(desc(domainOutbox.createdAt))
@@ -1193,13 +1194,11 @@ export class MatchingService {
       )
       .returning();
     if (!updated) return null;
-    await tx
-      .insert(travelCircleMembers)
-      .values({
-        travelCircleId: circle.id,
-        travelPlanId: plan.id,
-        userId: plan.userId,
-      });
+    await tx.insert(travelCircleMembers).values({
+      travelCircleId: circle.id,
+      travelPlanId: plan.id,
+      userId: plan.userId,
+    });
     await tx
       .update(travelPlans)
       .set({ status: "IN_CIRCLE", updatedAt: new Date() })
@@ -1237,7 +1236,7 @@ export class MatchingService {
       .values({
         originHubId: match.originHubId ?? null,
         destinationCampId: a.destinationCampId,
-        travelDate: a.intendedTravelDate,
+        travelDate: match.proposedTravelDate ?? a.intendedTravelDate,
         departureWindow: match.proposedDepartureWindow ?? a.departureWindow,
         transportMode: match.proposedTransportMode ?? a.transportMode,
       })
@@ -1250,7 +1249,7 @@ export class MatchingService {
         originLgaId: a.originLgaId,
         originTownId: a.originTownId,
         destinationCampId: a.destinationCampId,
-        travelDate: a.intendedTravelDate,
+        travelDate: match.proposedTravelDate ?? a.intendedTravelDate,
         departureWindow: match.proposedDepartureWindow ?? a.departureWindow,
         transportMode: match.proposedTransportMode ?? a.transportMode,
         status: "FORMING",
@@ -1346,19 +1345,17 @@ export class MatchingService {
     alternativeCandidateCount: number,
     selectedCircleId?: string,
   ) {
-    return tx
-      .insert(matchAttempts)
-      .values({
-        travelPlanId,
-        algorithmVersion: MATCHING_ALGORITHM_VERSION,
-        candidateCount,
-        directCandidateCount,
-        alternativeCandidateCount,
-        resultType,
-        selectedCircleId,
-        startedAt,
-        completedAt: new Date(),
-      });
+    return tx.insert(matchAttempts).values({
+      travelPlanId,
+      algorithmVersion: MATCHING_ALGORITHM_VERSION,
+      candidateCount,
+      directCandidateCount,
+      alternativeCandidateCount,
+      resultType,
+      selectedCircleId,
+      startedAt,
+      completedAt: new Date(),
+    });
   }
   private outbox(
     tx: any,
@@ -1366,16 +1363,14 @@ export class MatchingService {
     aggregateId: string,
     userId: string,
   ) {
-    return tx
-      .insert(domainOutbox)
-      .values({
-        aggregateType: eventType.startsWith("TravelCircle")
-          ? "TRAVEL_CIRCLE"
-          : "TRAVEL_PLAN",
-        aggregateId,
-        eventType,
-        payload: { aggregateId, userId, occurredAt: new Date().toISOString() },
-      });
+    return tx.insert(domainOutbox).values({
+      aggregateType: eventType.startsWith("TravelCircle")
+        ? "TRAVEL_CIRCLE"
+        : "TRAVEL_PLAN",
+      aggregateId,
+      eventType,
+      payload: { aggregateId, userId, occurredAt: new Date().toISOString() },
+    });
   }
 }
 function gteDate(column: any, value: string) {

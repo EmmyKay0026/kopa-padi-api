@@ -71,6 +71,13 @@
       "when": 1788933468312,
       "tag": "0009_medical_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791975276401,
+      "tag": "0010_case_insensitive_email",
+      "breakpoints": true
     }
   ]
 }

@@ -7,9 +7,11 @@ import { root, artifacts, environment, connect, command, record } from './suppor
 const mode = process.argv[2] || 'preflight';
 try {
   const client = await connect();
+  const {rows:[schema]}=await client.query("select to_regclass('public.\"user\"') is not null as ready");
   const { rows: [summary] } = await client.query(`select current_database() as database, inet_server_addr()::text as address,
-    (select count(*)::int from "user") as users,
-    (select count(*)::int from "user" where email not like '%@p2.invalid') as foreign_users`);
+    ${schema.ready?'(select count(*)::int from "user")':'0'} as users,
+    ${schema.ready?"(select count(*)::int from \"user\" where email not like '%@p2.invalid')":"0"} as foreign_users`);
+  assert.ok(schema.ready || ['setup','preflight'].includes(mode),'Application schema absent; run guarded setup first');
   assert.equal(summary.foreign_users, 0, 'Test database contains non-P2 accounts; refusing setup/teardown');
   await client.end();
   if (mode === 'preflight') { console.log(JSON.stringify({ safety: 'passed', node: process.version, ...summary })); }
@@ -28,7 +30,7 @@ try {
     Object.assign(process.env, environment());
     await import('../../dist/src/main.js');
   } else if (mode === 'web') {
-    await command(['node_modules/next/dist/bin/next', 'dev', '--port', '3100'], { cwd: resolve(root, '../kopa-padi-web') });
+    await command(['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3100'], { cwd: resolve(root, '../kopa-padi-web') });
   } else if (mode === 'sink') {
     let accepted = 0, rejected = 0, fail = false;
     createServer(async (req, res) => {

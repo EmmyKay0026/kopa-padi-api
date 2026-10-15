@@ -12,5 +12,6 @@ test('only the designated localhost PostgreSQL URL is accepted', () => {
     'postgresql://synthetic:synthetic@localhost/kopa_padi_p2_e2e?host=remote.invalid',
     'postgresql://synthetic:synthetic@localhost/kopa_padi_p2_e2e?options=-csearch_path=other',
     'https://localhost/kopa_padi_p2_e2e',
+    'postgresql://synthetic:synthetic@localhost:5433/kopa_padi_p2_e2e',
   ]) assert.throws(() => assertTarget(value));
 });

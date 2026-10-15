@@ -14,6 +14,7 @@ import { auth } from "./auth.js";
 import "./config/environment.js";
 import { enabled, validateEnvironment } from "./config/runtime.js";
 import { pool } from "./db/database.js";
+import { allowedAuthRedirects, allowedBrowserWrite, trustedProxies } from "./config/http-security.js";
 
 async function bootstrap() {
   validateEnvironment();
@@ -29,10 +30,22 @@ async function bootstrap() {
               "res.headers.set-cookie",
             ],
           },
-    trustProxy: true,
+    trustProxy: trustedProxies(),
     bodyLimit: Number(process.env.MAX_UPLOAD_BYTES ?? 5_242_880) + 65_536,
   });
   const fastify = adapter.getInstance();
+  const webOrigin = new URL(process.env.WEB_URL ?? 'http://localhost:3000').origin;
+  fastify.addHook('onRequest', async (request, reply) => {
+    reply.header("x-request-id", request.id);
+    if (!allowedBrowserWrite(request.method, request.headers.origin, request.headers['sec-fetch-site'] as string | undefined, webOrigin)) {
+      return reply.code(403).send({ message: 'Untrusted request origin' });
+    }
+  });
+  fastify.addHook('preValidation', async (request, reply) => {
+    if (request.method === 'POST' && request.url.startsWith('/api/auth/') && !allowedAuthRedirects(request.body, [webOrigin, new URL(process.env.BETTER_AUTH_URL ?? 'http://localhost:4000').origin])) {
+      return reply.code(403).send({ message: 'Untrusted authentication redirect' });
+    }
+  });
   await fastify.register(cors, {
     origin: process.env.WEB_URL ?? "http://localhost:3000",
     credentials: true,
@@ -169,7 +182,7 @@ async function bootstrap() {
     adapter,
   );
   app.setGlobalPrefix("api");
-  await app.listen(Number(process.env.PORT ?? 4000), "0.0.0.0");
+  await app.listen(Number(process.env.PORT ?? 4000), process.env.HOST ?? "127.0.0.1");
 }
 try {
   await bootstrap();

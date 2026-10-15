@@ -141,7 +141,7 @@ export class SafetyService {
     )
       ? "HIGH"
       : "MEDIUM";
-    const [row] = await db.transaction(async (tx: any) => {
+    const row = await db.transaction(async (tx: any) => {
       const [r] = await tx
         .insert(safetyReports)
         .values({

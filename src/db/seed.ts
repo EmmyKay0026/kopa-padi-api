@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import 'dotenv/config';
 import { eq } from 'drizzle-orm';
 import { ADMIN_CAPABILITIES } from '../domain.js';
@@ -20,4 +21,4 @@ async function seed() {
     });
   }
 }
-seed().then(() => pool.end()).catch(async (error) => { console.error(error); await pool.end(); process.exitCode = 1; });
+seed().then(() => pool.end()).catch(async (error) => { console.error(JSON.stringify(safeDiagnostic('database_command_failed', error))); await pool.end(); process.exitCode = 1; });

@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../db/database.js';
@@ -11,7 +12,7 @@ const deliveryLogger = new Logger('EmailDelivery');
 export async function sendZeptoMail(message: EmailMessage): Promise<void> {
   if (!process.env.ZEPTO_MAIL_API_KEY) {
     if (process.env.NODE_ENV === 'production') throw new Error('ZEPTO_MAIL_API_KEY is required');
-    deliveryLogger.warn(`Suppressed ${message.intent} email to ${message.to} in development: ${message.text}`);
+    deliveryLogger.warn(safeDiagnostic('email_suppressed'));
     return;
   }
   const rendered = renderEmail(message);
@@ -31,15 +32,15 @@ async function deliverQueuedEmail(outboxId: string, message: EmailMessage) {
     await sendZeptoMail(message);
     await db.update(notificationOutbox).set({ sentAt: new Date(), attempts: '1', lastError: null }).where(eq(notificationOutbox.id, outboxId));
   } catch (error) {
-    const detail = error instanceof Error ? error.message.slice(0, 500) : 'Unknown provider failure';
+    const detail = JSON.stringify(safeDiagnostic('email_delivery_failed', error));
     await db.update(notificationOutbox).set({ attempts: '1', lastError: detail }).where(eq(notificationOutbox.id, outboxId)).catch(() => undefined);
-    deliveryLogger.error(`Email ${message.intent} failed and remains queued: ${detail}`);
+    deliveryLogger.error(safeDiagnostic('email_delivery_failed', error));
   }
 }
 export async function retryQueuedEmails(limit=25){
   const rows=await db.select().from(notificationOutbox).where(and(isNull(notificationOutbox.sentAt),lt(sql<number>`${notificationOutbox.attempts}::int`,5))).orderBy(notificationOutbox.createdAt).limit(limit);
   let sent=0,failed=0;
-  for(const row of rows){const payload=row.payload as Partial<EmailMessage>;if(!payload.to||!payload.subject||!payload.text){failed++;continue;}try{await sendZeptoMail({...payload,userId:row.userId,to:payload.to,subject:payload.subject,text:payload.text,intent:row.type as EmailIntent});await db.update(notificationOutbox).set({sentAt:new Date(),attempts:sql`(${notificationOutbox.attempts}::int + 1)::text`,lastError:null}).where(and(eq(notificationOutbox.id,row.id),isNull(notificationOutbox.sentAt)));sent++;}catch(error){failed++;await db.update(notificationOutbox).set({attempts:sql`(${notificationOutbox.attempts}::int + 1)::text`,lastError:error instanceof Error?error.message.slice(0,500):'Provider failure'}).where(eq(notificationOutbox.id,row.id));}}
+  for(const row of rows){const payload=row.payload as Partial<EmailMessage>;if(!payload.to||!payload.subject||!payload.text){failed++;continue;}try{await sendZeptoMail({...payload,userId:row.userId,to:payload.to,subject:payload.subject,text:payload.text,intent:row.type as EmailIntent});await db.update(notificationOutbox).set({sentAt:new Date(),attempts:sql`(${notificationOutbox.attempts}::int + 1)::text`,lastError:null}).where(and(eq(notificationOutbox.id,row.id),isNull(notificationOutbox.sentAt)));sent++;}catch(error){failed++;await db.update(notificationOutbox).set({attempts:sql`(${notificationOutbox.attempts}::int + 1)::text`,lastError:JSON.stringify(safeDiagnostic('email_delivery_failed', error))}).where(eq(notificationOutbox.id,row.id));}}
   return{checked:rows.length,sent,failed};
 }
 
@@ -54,7 +55,7 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   async send(message: EmailMessage) { await sendZeptoMail(message); }
   dispatch(message: EmailMessage) {
-    if (!message.userId) { this.logger.error(`Email ${message.intent} was not queued because userId is missing`); return; }
-    void queueEmail({ ...message, userId: message.userId }).catch((error) => this.logger.error(`Email ${message.intent} could not be queued: ${error instanceof Error ? error.message : 'Unknown outbox failure'}`));
+    if (!message.userId) { this.logger.error(safeDiagnostic('email_missing_user')); return; }
+    void queueEmail({ ...message, userId: message.userId }).catch((error) => this.logger.error(safeDiagnostic('email_queue_failed', error)));
   }
 }

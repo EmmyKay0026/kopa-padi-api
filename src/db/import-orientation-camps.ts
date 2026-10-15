@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
@@ -105,5 +106,5 @@ async function main() {
 }
 
 main()
-  .catch((error) => { console.error(error); process.exitCode = 1; })
+  .catch((error) => { console.error(JSON.stringify(safeDiagnostic('database_command_failed', error))); process.exitCode = 1; })
   .finally(async () => { await pool.end(); });

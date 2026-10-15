@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { SafeExceptionFilter, SafeLogController, safeNestLogger, safeDiagnostic, withErrorContext, installFatalErrorHandlers } from "./common/safe-errors.js";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
@@ -14,11 +16,14 @@ import { auth } from "./auth.js";
 import "./config/environment.js";
 import { enabled, validateEnvironment } from "./config/runtime.js";
 import { pool } from "./db/database.js";
-import { allowedAuthRedirects, allowedBrowserWrite, trustedProxies } from "./config/http-security.js";
+import { allowedAuthRedirects, allowedBrowserWrite, trustedProxies } from './config/http-security.js';
 
 async function bootstrap() {
+  installFatalErrorHandlers();
   validateEnvironment();
   const adapter = new FastifyAdapter({
+    logController: new SafeLogController(),
+    genReqId: () => randomUUID(),
     logger:
       process.env.NODE_ENV === "test"
         ? false
@@ -83,13 +88,17 @@ async function bootstrap() {
           });
       const origin = `${request.protocol}://${request.headers.host}`;
       const body = request.body ? JSON.stringify(request.body) : undefined;
-      const response = await auth.handler(
+      const response = await withErrorContext(request, () => auth.handler(
         new Request(new URL(request.url, origin), {
           method: request.method,
           headers: fromNodeHeaders(request.headers),
           ...(body ? { body } : {}),
         }),
-      );
+      ));
+      if (response.status >= 500) {
+        request.log.error({ request_id: request.id, route: request.routeOptions.url, status_code: response.status, error_category: 'authentication_error' }, 'request_failed');
+        return reply.code(response.status).send({ code: 'INTERNAL_ERROR', message: 'Something went wrong. Please try again.' });
+      }
       reply.status(response.status);
       response.headers.forEach((value, key) => reply.header(key, value));
       return reply.send(Buffer.from(await response.arrayBuffer()));
@@ -126,32 +135,6 @@ async function bootstrap() {
       "request_completed",
     );
   });
-  fastify.setErrorHandler((error, request, reply) => {
-    request.log.error(
-      {
-        request_id: request.id,
-        route: request.routeOptions.url,
-        status_code: (error as any).statusCode ?? 500,
-        error_type: error instanceof Error ? error.name : "UnknownError",
-      },
-      "request_failed",
-    );
-    const status = (error as any).statusCode ?? 500;
-    if (process.env.NODE_ENV === "production" && status >= 500)
-      return reply
-        .code(status)
-        .send({
-          code: "INTERNAL_ERROR",
-          message: "Something went wrong. Please try again.",
-        });
-    return reply
-      .code(status)
-      .send({
-        statusCode: status,
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-  });
   // Allow empty JSON bodies (e.g. POST /travel-circles/current/confirm with no payload).
   // Fastify's default parser throws FST_ERR_CTP_EMPTY_JSON_BODY when Content-Type is
   // application/json and the body is empty. Use adapter.useBodyParser so that
@@ -180,13 +163,15 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     adapter,
+    { logger: safeNestLogger, abortOnError: false },
   );
+  app.useGlobalFilters(new SafeExceptionFilter());
   app.setGlobalPrefix("api");
   await app.listen(Number(process.env.PORT ?? 4000), process.env.HOST ?? "127.0.0.1");
 }
 try {
   await bootstrap();
 } catch (error) {
-  console.error("API startup failed:", error);
+  console.error(JSON.stringify(safeDiagnostic("api_startup_failed", error)));
   process.exitCode = 1;
 }

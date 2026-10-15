@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import '../config/environment.js';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -12,5 +13,6 @@ export const pool = new Pool({
   idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS ?? 30_000),
   connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS ?? 5_000),
 });
+pool.on('error', error => console.error(JSON.stringify(safeDiagnostic('database_pool_error', error))));
 export const db = drizzle({ client: pool, schema });
 export type Database = typeof db;

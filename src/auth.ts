@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "./common/safe-errors.js";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import "./config/environment.js";
@@ -27,6 +28,12 @@ function verificationUrlForFrontend(url: string) {
 }
 
 export const auth = betterAuth({
+  // Better Call otherwise writes unknown errors directly to console.error,
+  // bypassing Better Auth's configured logger. Re-throw to our HTTP boundary.
+  onAPIError: { throw: true },
+  logger: { log(level, _message, ...args) {
+    if (level === "error" || level === "warn") console.error(JSON.stringify(safeDiagnostic("authentication_" + level, args.find(value => value instanceof Error))));
+  } },
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:4000",
   basePath: "/api/auth",
   secret: process.env.BETTER_AUTH_SECRET,

@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import "dotenv/config";
 import { eq, sql } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
@@ -231,7 +232,7 @@ async function seedGeography() {
 seedGeography()
   .then(() => pool.end())
   .catch(async (error) => {
-    console.error(error);
+    console.error(JSON.stringify(safeDiagnostic('database_command_failed', error)));
     await pool.end();
     process.exitCode = 1;
   });

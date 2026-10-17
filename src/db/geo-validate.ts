@@ -1,3 +1,4 @@
+import { safeDiagnostic } from "../common/safe-errors.js";
 import 'dotenv/config';
 import { sql } from 'drizzle-orm'; import { db,pool } from './database.js';
 async function validate(){
@@ -11,4 +12,4 @@ async function validate(){
       (select count(*) from travel_hub_lga h left join travel_hub t on t.id=h.travel_hub_id left join lga l on l.id=h.lga_id where t.id is null or l.id is null or h.estimated_minutes < 0) as invalid_hub_coverage`);
   const row=checks.rows[0] as Record<string,string>; if(Number(row.states)!==37||Number(row.lgas)!==774||['orphan_lgas','invalid_camps','invalid_pairs','invalid_hub_coverage'].some(k=>Number(row[k])!==0)) throw new Error(`Geography validation failed: ${JSON.stringify(row)}`); console.log(`Geography valid: ${JSON.stringify(row)}`);
 }
-validate().then(()=>pool.end()).catch(async error=>{console.error(error);await pool.end();process.exitCode=1;});
+validate().then(()=>pool.end()).catch(async error=>{console.error(JSON.stringify(safeDiagnostic('database_command_failed', error)));await pool.end();process.exitCode=1;});

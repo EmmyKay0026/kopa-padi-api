@@ -446,7 +446,7 @@ export class SafetyService {
           .onConflictDoNothing();
         await tx
           .update(travelPlans)
-          .set({ status: "CANCELLED", updatedAt: new Date() })
+          .set({ status: "CANCELLED", cancelledAt: new Date(), updatedAt: new Date() })
           .where(
             and(
               eq(travelPlans.userId, userId),

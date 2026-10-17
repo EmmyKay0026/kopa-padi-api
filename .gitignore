@@ -13,3 +13,6 @@ test-results/
 DEPLOYMENT.md
 *.md
 .p2-e2e/
+.p22-e2e/
+
+.p22-final-e2e/

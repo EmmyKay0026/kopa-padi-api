@@ -16,3 +16,7 @@ DEPLOYMENT.md
 .p22-e2e/
 
 .p22-final-e2e/
+.env.before-p0-tests
+.env.before-p2-e2e
+.p0-followup-backup/
+.p0-0010-backup/

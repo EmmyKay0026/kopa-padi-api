@@ -90,7 +90,7 @@ try{
     const service=new JourneyService({resolve:async()=>({})});
     const id=state.accounts.alice.id;
     // Finished Journeys retain the record; create a controlled active share through the service.
-    const {rows:[contact]}=await db.query('select id from trusted_contact where user_id=$1 limit 1',[id]);
+    const {rows:[contact]}=await db.query('select id from trusted_contact where user_id=$1 and is_active=true limit 1',[id]);
     const {rows:[journey]}=await db.query('select id from journey where user_id=$1 order by created_at desc limit 1',[id]);
     const token=randomBytes(32).toString('hex');
     await db.query("update journey_share set status='REVOKED' where journey_id=$1 and trusted_contact_id=$2",[journey.id,contact.id]);

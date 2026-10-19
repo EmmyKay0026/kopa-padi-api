@@ -1,3 +1,4 @@
+import { allowedDuringMaintenance } from './config/maintenance.js';
 import { randomUUID } from "node:crypto";
 import { SafeExceptionFilter, SafeLogController, safeNestLogger, safeDiagnostic, withErrorContext, installFatalErrorHandlers } from "./common/safe-errors.js";
 import cors from "@fastify/cors";
@@ -42,6 +43,10 @@ async function bootstrap() {
   const webOrigin = new URL(process.env.WEB_URL ?? 'http://localhost:3000').origin;
   fastify.addHook('onRequest', async (request, reply) => {
     reply.header("x-request-id", request.id);
+    if (/^\/api\/(journey-share(?:\/|$)|journeys(?:\/|$))/.test(request.url)) {
+      reply.header('Cache-Control', 'private, no-store, max-age=0');
+      reply.header('Referrer-Policy', 'no-referrer');
+    }
     if (!allowedBrowserWrite(request.method, request.headers.origin, request.headers['sec-fetch-site'] as string | undefined, webOrigin)) {
       return reply.code(403).send({ message: 'Untrusted request origin' });
     }
@@ -108,10 +113,7 @@ async function bootstrap() {
     (request as any).pilotStartedAt = process.hrtime.bigint();
     reply.header("x-request-id", request.id);
     const write = !["GET", "HEAD", "OPTIONS"].includes(request.method);
-    const safety =
-      /\/api\/journeys\/current\/(check-ins|arrive|complete|emergency)/.test(
-        request.url,
-      );
+    const safety = allowedDuringMaintenance(request.url);
     if (write && enabled("MAINTENANCE_MODE", false) && !safety)
       return reply
         .code(503)

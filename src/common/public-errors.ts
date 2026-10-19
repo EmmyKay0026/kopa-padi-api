@@ -1,5 +1,6 @@
 // Reviewed literal application messages only; never echo arbitrary exception text.
 export const publicMessages = new Set([
+  "Create an active Journey share link before sharing a location",
   "A call-up document is required",
   "A current VERIFIED PCM posting is required",
   "A plan was matched concurrently",

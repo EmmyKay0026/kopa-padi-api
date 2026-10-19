@@ -58,7 +58,7 @@ export class VerificationService {
         return updated;
       });
       const [user] = await db.select().from(users).where(eq(users.id, userId));
-      this.email.dispatch({ userId, to: user.email, intent: 'PCM_SUBMITTED', subject: 'We received your verification', text: 'Your PCM verification has been submitted successfully. Our team will review it and email you when a decision is ready.', recipientName: user.name });
+      await this.email.dispatch({ userId, to: user.email, intent: 'PCM_SUBMITTED', subject: 'We received your verification', text: 'Your PCM verification has been submitted successfully. Our team will review it and email you when a decision is ready.', recipientName: user.name });
       return verification;
     } catch (error) { await this.storage.remove(stored.storageKey); throw error; }
   }
@@ -90,9 +90,9 @@ export class VerificationService {
       return updated;
     });
     const [user] = await db.select().from(users).where(eq(users.id, result.userId));
-    if (target === 'VERIFIED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_APPROVED', subject: 'You’re verified on Kopa Padi', text: 'Good news—your PCM verification has been approved. Your verified status is now active.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'View verification' });
-    if (target === 'REJECTED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_REJECTED', subject: 'Update on your Kopa Padi verification', text: data.userSafeReason ?? 'We were unable to verify your submission. Sign in to review the decision and available next steps.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Review decision' });
-    if (target === 'RESUBMISSION_REQUIRED') this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_RESUBMISSION_REQUIRED', subject: 'Action needed: update your verification', text: data.userSafeReason ?? 'We need updated information to complete your verification. Sign in to review the request and upload your documents.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Update verification' });
+    if (target === 'VERIFIED') await this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_APPROVED', subject: 'You’re verified on Kopa Padi', text: 'Good news—your PCM verification has been approved. Your verified status is now active.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'View verification' });
+    if (target === 'REJECTED') await this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_REJECTED', subject: 'Update on your Kopa Padi verification', text: data.userSafeReason ?? 'We were unable to verify your submission. Sign in to review the decision and available next steps.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Review decision' });
+    if (target === 'RESUBMISSION_REQUIRED') await this.email.dispatch({ userId: user.id, to: user.email, intent: 'PCM_RESUBMISSION_REQUIRED', subject: 'Action needed: update your verification', text: data.userSafeReason ?? 'We need updated information to complete your verification. Sign in to review the request and upload your documents.', recipientName: user.name, actionUrl: `${process.env.WEB_URL ?? 'http://localhost:3000'}/verification`, actionLabel: 'Update verification' });
     return result;
   }
   async document(id: string, documentId: string, actorId: string) {

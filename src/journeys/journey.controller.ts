@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { AdminOnly, Public, RequestUser, SafetyOnlyAccess, VerifiedPCMOnly } from '../common/auth.guard.js';
+import { AdminOnly, OwnerWithdrawal, Public, RequestUser, SafetyOnlyAccess, VerifiedPCMOnly } from '../common/auth.guard.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { arriveSchema, cancelSchema, checkInSchema, checklistSchema, contactSchema, locationSchema, prepareSchema, shareSchema } from './journey.schemas.js';
 import { JourneyService } from './journey.service.js';
@@ -19,7 +19,11 @@ export class JourneyController {
   @SafetyOnlyAccess() @Post('current/complete') complete(@Req() req: AuthRequest) { return this.journeys.complete(req.user.id); }
   @Post('current/cancel') cancel(@Req() req: AuthRequest, @Body(new ZodPipe(cancelSchema)) body: any) { return this.journeys.cancel(req.user.id, body.reason); }
   @Post('current/share') share(@Req() req: AuthRequest, @Body(new ZodPipe(shareSchema)) body: any) { return this.journeys.createShare(req.user.id, body.trustedContactId); }
-  @Post('current/share/revoke') revoke(@Req() req: AuthRequest) { return this.journeys.revokeShares(req.user.id); }
+  @OwnerWithdrawal() @Post('current/share/revoke') revoke(@Req() req: AuthRequest) { return this.journeys.revokeShares(req.user.id); }
+  @OwnerWithdrawal() @Get('sharing') sharing(@Req() req: AuthRequest) { return this.journeys.sharing(req.user.id); }
+  @OwnerWithdrawal() @Post('sharing/revoke') revokeAll(@Req() req: AuthRequest) { return this.journeys.revokeShares(req.user.id); }
+  @OwnerWithdrawal() @Post('sharing/location/revoke') withdrawLocation(@Req() req: AuthRequest) { return this.journeys.withdrawLocation(req.user.id); }
+  @SafetyOnlyAccess() @Get('current/circle-locations') circleLocations(@Req() req: AuthRequest) { return this.journeys.circleLocations(req.user.id); }
   @SafetyOnlyAccess() @Post('current/emergency/location') location(@Req() req: AuthRequest, @Body(new ZodPipe(locationSchema)) body: any) { return this.journeys.shareLocation(req.user.id, body); }
   @SafetyOnlyAccess() @Post('current/emergency/alert-trusted') alertTrusted(@Req() req: AuthRequest) { return this.journeys.alertTrusted(req.user.id); }
   @Post('current/emergency/alert-circle') alertCircle(@Req() req: AuthRequest) { return this.journeys.alertCircle(req.user.id); }

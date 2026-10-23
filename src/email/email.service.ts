@@ -6,6 +6,7 @@ import { notificationOutbox, journeyShares, journeys, trustedContacts } from '..
 import { renderEmail } from './email.template.js';
 import { smtpFallbackConfig } from './smtp-config.js';
 import { sendSmtpFallback } from './smtp.transport.js';
+import { EmailFallbackError, EmailHttpError, emailDeliveryDiagnostic } from './email-errors.js';
 
 export type EmailIntent = 'ACCOUNT_VERIFICATION' | 'PASSWORD_RESET' | 'PCM_SUBMITTED' | 'PCM_APPROVED' | 'PCM_REJECTED' | 'PCM_RESUBMISSION_REQUIRED' | 'JOURNEY_SAFETY';
 export interface EmailMessage { to: string; intent: EmailIntent; subject: string; text: string; userId?: string; title?: string; preheader?: string; recipientName?: string; actionUrl?: string; actionLabel?: string; details?: Array<{ label: string; value: string }>; safety?: { journeyId: string; shareId: string; contactId: string } }
@@ -33,9 +34,7 @@ export async function sendZeptoMail(message: EmailMessage): Promise<void> {
   if (!response.ok) throw new PrimaryEmailRejected(response.status);
 }
 
-class PrimaryEmailRejected extends Error {
-  constructor(readonly status: number) { super('Email provider did not accept the request'); }
-}
+class PrimaryEmailRejected extends EmailHttpError {}
 
 export async function sendEmail(message: EmailMessage): Promise<void> {
   const started = performance.now();
@@ -48,7 +47,8 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       || !smtpFallbackConfig()) throw error;
     const remaining = Math.floor(budget - (performance.now() - started));
     if (remaining < 1) throw error;
-    await sendSmtpFallback(message, remaining);
+    try { await sendSmtpFallback(message, remaining); }
+    catch (fallbackError) { throw new EmailFallbackError(error, fallbackError); }
   }
 }
 
@@ -79,8 +79,9 @@ export async function deliverQueuedEmail(outboxId: string) {
       await tx.update(notificationOutbox).set({ sentAt: new Date(), attempts: String(attempts), lastError: null }).where(eq(notificationOutbox.id, row.id));
       return 'accepted';
     } catch (error) {
-      await tx.update(notificationOutbox).set({ attempts: String(attempts), lastError: JSON.stringify(safeDiagnostic('email_delivery_failed', error)) }).where(eq(notificationOutbox.id, row.id));
-      deliveryLogger.error(safeDiagnostic('email_delivery_failed', error));
+      const diagnostic = emailDeliveryDiagnostic(error);
+      await tx.update(notificationOutbox).set({ attempts: String(attempts), lastError: JSON.stringify(diagnostic) }).where(eq(notificationOutbox.id, row.id));
+      deliveryLogger.error(diagnostic);
       return 'failed';
     }
   });

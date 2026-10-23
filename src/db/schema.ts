@@ -301,3 +301,10 @@ export const bugReports = pgTable('bug_report', {
 }, t => [index('bug_report_created_idx').on(t.createdAt),
   check('bug_report_status_check', sql`${t.status} IN ('OPEN','RESOLVED')`),
   check('bug_report_text_check', sql`char_length(${t.title}) BETWEEN 5 AND 160 AND char_length(${t.description}) BETWEEN 10 AND 4000`)]);
+
+export const circleLockRequests = pgTable('circle_lock_request', {
+  travelCircleId: uuid('travel_circle_id').primaryKey().references(() => travelCircles.id, { onDelete: 'cascade' }),
+  snapshot: text().notNull(),
+  approvals: jsonb().$type<string[]>().default([]).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});

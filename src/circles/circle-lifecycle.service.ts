@@ -1,3 +1,4 @@
+import { permanentlyLockCircle } from './circle-lock.js';
 import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/database.js';
@@ -16,14 +17,9 @@ export class CircleLifecycleService {
       if (candidate.memberCount < 2 || circleLockAt(candidate.travelDate, candidate.departureWindow) > now) continue;
       const didLock = await db.transaction(async (tx: any) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`circle:${candidate.id}`}))`);
-        const [circle] = await tx.update(travelCircles).set({ status: 'LOCKED', lockedAt: now, updatedAt: now }).where(and(eq(travelCircles.id, candidate.id), inArray(travelCircles.status, ['FORMING', 'READY', 'FULL']), sql`${travelCircles.memberCount} >= 2`)).returning();
-        if (!circle) return false;
-        await tx.update(travelPlans).set({ status: 'LOCKED', updatedAt: now }).where(inArray(travelPlans.id, tx.select({ id: travelCircleMembers.travelPlanId }).from(travelCircleMembers).where(and(eq(travelCircleMembers.travelCircleId, circle.id), inArray(travelCircleMembers.membershipStatus, [...ACTIVE])))));
-        await circleSystemMessage(tx, circle.id, `circle-locked:${circle.id}`, 'This Travel Circle is now locked. Chat and meetup coordination remain available.');
-        const members = await tx.select({ userId: travelCircleMembers.userId }).from(travelCircleMembers).where(and(eq(travelCircleMembers.travelCircleId, circle.id), inArray(travelCircleMembers.membershipStatus, [...ACTIVE])));
-        for (const member of members) await tx.insert(circleNotifications).values({ userId: member.userId, travelCircleId: circle.id, type: 'CIRCLE_LOCKED', body: 'Your Travel Circle is locked. Review the final plan and keep safety first.', dedupeKey: `circle-locked:${circle.id}` }).onConflictDoNothing();
-        await tx.insert(domainOutbox).values({ aggregateType: 'TRAVEL_CIRCLE', aggregateId: circle.id, eventType: 'TravelCircleLocked', payload: { circleId: circle.id, occurredAt: now.toISOString() } });
-        return true;
+        const [circle] = await tx.select().from(travelCircles).where(eq(travelCircles.id, candidate.id)).for('update');
+        if (!circle || circleLockAt(circle.travelDate, circle.departureWindow) > now) return false;
+        return permanentlyLockCircle(tx, circle.id, now);
       });
       if (didLock) locked += 1;
     }

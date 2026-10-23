@@ -3,11 +3,13 @@ import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import type { EmailMessage } from './email.service.js';
 import { renderEmail } from './email.template.js';
 import { smtpFallbackConfig } from './smtp-config.js';
+import { SmtpDeliveryError, type SmtpStage } from './email-errors.js';
 
 export async function sendSmtpFallback(message: EmailMessage, remainingMs: number) {
   let connection: SMTPConnection | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let expired = false;
+  let stage: SmtpStage = 'configuration';
   const ensureLive = () => { if (expired) throw new Error(); };
   const close = () => { try { connection?.close(); } catch { /* No raw diagnostics. */ } };
   try {
@@ -31,6 +33,7 @@ export async function sendSmtpFallback(message: EmailMessage, remainingMs: numbe
       timer = setTimeout(() => { expired = true; close(); reject(new Error()); }, remainingMs);
     });
     const delivery = (async () => {
+      stage = 'compose';
       // Compose MIME in memory; attachments cannot fetch files or URLs.
       const composer = nodemailer.createTransport({ streamTransport: true, buffer: true, newline: 'windows', disableFileAccess: true, disableUrlAccess: true });
       const rendered = renderEmail(message);
@@ -41,18 +44,21 @@ export async function sendSmtpFallback(message: EmailMessage, remainingMs: numbe
         text: rendered.text, html: rendered.html, disableFileAccess: true, disableUrlAccess: true,
       });
       ensureLive();
+      stage = 'connect';
       await new Promise<void>((resolve, reject) => smtp.connect(error => error ? reject(error) : resolve()));
       ensureLive();
+      stage = 'authenticate';
       await new Promise<void>((resolve, reject) => smtp.login({ user: config.user, pass: config.password }, error => error ? reject(error) : resolve()));
       ensureLive();
+      stage = 'send';
       return new Promise<{ accepted: string[]; rejected: string[] }>((resolve, reject) => {
         smtp.send({ from: sender, to: [message.to] }, mime.message, (error, result) => error ? reject(error) : resolve(result));
       });
     })();
     const result = await Promise.race([delivery, deadline, connectionFailure]);
     if (!result.accepted?.length || result.rejected?.length) throw new Error();
-  } catch {
-    throw new Error('SMTP fallback did not accept the request');
+  } catch (error) {
+    throw new SmtpDeliveryError(error, stage, expired);
   } finally {
     expired = true;
     if (timer) clearTimeout(timer);

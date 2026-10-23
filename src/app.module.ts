@@ -1,3 +1,4 @@
+import { CircleLockService } from './circles/circle-lock.js';
 import { BugReportsController } from './bug-reports/bug-reports.controller.js';
 import { BugReportsService } from './bug-reports/bug-reports.service.js';
 import { Module } from "@nestjs/common";
@@ -65,6 +66,7 @@ import { VerificationService } from "./verification/verification.service.js";
     OperationsController,
   ],
   providers: [
+    CircleLockService,
     BugReportsService,
     EmailService,
     PrivateStorageService,

@@ -1,3 +1,5 @@
+import { BugReportsController } from './bug-reports/bug-reports.controller.js';
+import { BugReportsService } from './bug-reports/bug-reports.service.js';
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { CircleLifecycleService } from "./circles/circle-lifecycle.service.js";
@@ -44,6 +46,7 @@ import { VerificationService } from "./verification/verification.service.js";
 
 @Module({
   controllers: [
+    BugReportsController,
     VerificationController,
     GeographyController,
     TravelPlanController,
@@ -62,6 +65,7 @@ import { VerificationService } from "./verification/verification.service.js";
     OperationsController,
   ],
   providers: [
+    BugReportsService,
     EmailService,
     PrivateStorageService,
     VerificationService,

@@ -11,6 +11,8 @@ try {
   process.env.P2_TEST_PHASE='2.2-final';
   const connection=await connect(); await connection.end();
   Object.assign(process.env,environment());
+  // Integration fixtures must never fall through to an operator's SMTP relay.
+  process.env.SMTP_FALLBACK_ENABLED='false';
   const args=process.argv.slice(2);
   if(!args.length) {console.log('P2.4 configured target and actual loopback database identity: PASS');process.exit(0);}
   const child=spawn(process.execPath,args,{cwd:root,env:process.env,windowsHide:true,stdio:'inherit'});

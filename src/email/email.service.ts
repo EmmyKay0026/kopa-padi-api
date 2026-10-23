@@ -4,6 +4,8 @@ import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../db/database.js';
 import { notificationOutbox, journeyShares, journeys, trustedContacts } from '../db/schema.js';
 import { renderEmail } from './email.template.js';
+import { smtpFallbackConfig } from './smtp-config.js';
+import { sendSmtpFallback } from './smtp.transport.js';
 
 export type EmailIntent = 'ACCOUNT_VERIFICATION' | 'PASSWORD_RESET' | 'PCM_SUBMITTED' | 'PCM_APPROVED' | 'PCM_REJECTED' | 'PCM_RESUBMISSION_REQUIRED' | 'JOURNEY_SAFETY';
 export interface EmailMessage { to: string; intent: EmailIntent; subject: string; text: string; userId?: string; title?: string; preheader?: string; recipientName?: string; actionUrl?: string; actionLabel?: string; details?: Array<{ label: string; value: string }>; safety?: { journeyId: string; shareId: string; contactId: string } }
@@ -28,7 +30,26 @@ export async function sendZeptoMail(message: EmailMessage): Promise<void> {
   });
   // Never read/store provider bodies, which can repeat private input.
   await response.body?.cancel();
-  if (!response.ok) throw new Error('Email provider did not accept the request');
+  if (!response.ok) throw new PrimaryEmailRejected(response.status);
+}
+
+class PrimaryEmailRejected extends Error {
+  constructor(readonly status: number) { super('Email provider did not accept the request'); }
+}
+
+export async function sendEmail(message: EmailMessage): Promise<void> {
+  const started = performance.now();
+  const budget = mailTimeoutMs();
+  try { await sendZeptoMail(message); }
+  catch (error) {
+    // No immediate second delivery after an ambiguous timeout/network failure.
+    // Gateway timeout responses also cannot establish that delivery was rejected.
+    if (!(error instanceof PrimaryEmailRejected) || [408, 504].includes(error.status)
+      || !smtpFallbackConfig()) throw error;
+    const remaining = Math.floor(budget - (performance.now() - started));
+    if (remaining < 1) throw error;
+    await sendSmtpFallback(message, remaining);
+  }
 }
 
 // Immediate and retry delivery use the SAME row lock. The bounded provider call
@@ -54,7 +75,7 @@ export async function deliverQueuedEmail(outboxId: string) {
     }
     const attempts = Number(row.attempts) + 1;
     try {
-      await sendZeptoMail({ ...payload, intent: row.type as EmailIntent });
+      await sendEmail({ ...payload, intent: row.type as EmailIntent });
       await tx.update(notificationOutbox).set({ sentAt: new Date(), attempts: String(attempts), lastError: null }).where(eq(notificationOutbox.id, row.id));
       return 'accepted';
     } catch (error) {
@@ -87,7 +108,7 @@ export async function queueEmail(message: EmailMessage & { userId: string }): Pr
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  async send(message: EmailMessage) { await sendZeptoMail(message); }
+  async send(message: EmailMessage) { await sendEmail(message); }
   async dispatch(message: EmailMessage) {
     if (!message.userId) { this.logger.error(safeDiagnostic('email_missing_user')); return; }
     // API callers await persistence and the same bounded delivery path. Safety

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { SafeExceptionFilter, SafeLogController, safeNestLogger, safeDiagnostic, withErrorContext, installFatalErrorHandlers } from "./common/safe-errors.js";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
@@ -10,13 +8,27 @@ import {
   NestFastifyApplication,
 } from "@nestjs/platform-fastify";
 import { fromNodeHeaders } from "better-auth/node";
+import { randomUUID } from "node:crypto";
 import "reflect-metadata";
 import { AppModule } from "./app.module.js";
 import { auth } from "./auth.js";
+import {
+  installFatalErrorHandlers,
+  safeDiagnostic,
+  SafeExceptionFilter,
+  SafeLogController,
+  safeNestLogger,
+  withErrorContext,
+} from "./common/safe-errors.js";
 import "./config/environment.js";
+import {
+  allowedAuthRedirects,
+  allowedBrowserWrite,
+  trustedProxies,
+} from "./config/http-security.js";
+import { allowedDuringMaintenance } from "./config/maintenance.js";
 import { enabled, validateEnvironment } from "./config/runtime.js";
 import { pool } from "./db/database.js";
-import { allowedAuthRedirects, allowedBrowserWrite, trustedProxies } from './config/http-security.js';
 
 async function bootstrap() {
   installFatalErrorHandlers();
@@ -39,16 +51,37 @@ async function bootstrap() {
     bodyLimit: Number(process.env.MAX_UPLOAD_BYTES ?? 5_242_880) + 65_536,
   });
   const fastify = adapter.getInstance();
-  const webOrigin = new URL(process.env.WEB_URL ?? 'http://localhost:3000').origin;
-  fastify.addHook('onRequest', async (request, reply) => {
+  const webOrigin = new URL(process.env.WEB_URL ?? "http://localhost:3000")
+    .origin;
+  fastify.addHook("onRequest", async (request, reply) => {
     reply.header("x-request-id", request.id);
-    if (!allowedBrowserWrite(request.method, request.headers.origin, request.headers['sec-fetch-site'] as string | undefined, webOrigin)) {
-      return reply.code(403).send({ message: 'Untrusted request origin' });
+    if (/^\/api\/(journey-share(?:\/|$)|journeys(?:\/|$))/.test(request.url)) {
+      reply.header("Cache-Control", "private, no-store, max-age=0");
+      reply.header("Referrer-Policy", "no-referrer");
+    }
+    if (
+      !allowedBrowserWrite(
+        request.method,
+        request.headers.origin,
+        request.headers["sec-fetch-site"] as string | undefined,
+        webOrigin,
+      )
+    ) {
+      return reply.code(403).send({ message: "Untrusted request origin" });
     }
   });
-  fastify.addHook('preValidation', async (request, reply) => {
-    if (request.method === 'POST' && request.url.startsWith('/api/auth/') && !allowedAuthRedirects(request.body, [webOrigin, new URL(process.env.BETTER_AUTH_URL ?? 'http://localhost:4000').origin])) {
-      return reply.code(403).send({ message: 'Untrusted authentication redirect' });
+  fastify.addHook("preValidation", async (request, reply) => {
+    if (
+      request.method === "POST" &&
+      request.url.startsWith("/api/auth/") &&
+      !allowedAuthRedirects(request.body, [
+        webOrigin,
+        new URL(process.env.BETTER_AUTH_URL ?? "http://localhost:4000").origin,
+      ])
+    ) {
+      return reply
+        .code(403)
+        .send({ message: "Untrusted authentication redirect" });
     }
   });
   await fastify.register(cors, {
@@ -80,24 +113,37 @@ async function bootstrap() {
         request.url.includes("/sign-up") &&
         !enabled("REGISTRATION_ENABLED", true)
       )
-        return reply
-          .code(503)
-          .send({
-            code: "PILOT_REGISTRATION_CLOSED",
-            message: "Registration is temporarily unavailable.",
-          });
+        return reply.code(503).send({
+          code: "PILOT_REGISTRATION_CLOSED",
+          message: "Registration is temporarily unavailable.",
+        });
       const origin = `${request.protocol}://${request.headers.host}`;
       const body = request.body ? JSON.stringify(request.body) : undefined;
-      const response = await withErrorContext(request, () => auth.handler(
-        new Request(new URL(request.url, origin), {
-          method: request.method,
-          headers: fromNodeHeaders(request.headers),
-          ...(body ? { body } : {}),
-        }),
-      ));
+      const response = await withErrorContext(request, () =>
+        auth.handler(
+          new Request(new URL(request.url, origin), {
+            method: request.method,
+            headers: fromNodeHeaders(request.headers),
+            ...(body ? { body } : {}),
+          }),
+        ),
+      );
       if (response.status >= 500) {
-        request.log.error({ request_id: request.id, route: request.routeOptions.url, status_code: response.status, error_category: 'authentication_error' }, 'request_failed');
-        return reply.code(response.status).send({ code: 'INTERNAL_ERROR', message: 'Something went wrong. Please try again.' });
+        request.log.error(
+          {
+            request_id: request.id,
+            route: request.routeOptions.url,
+            status_code: response.status,
+            error_category: "authentication_error",
+          },
+          "request_failed",
+        );
+        return reply
+          .code(response.status)
+          .send({
+            code: "INTERNAL_ERROR",
+            message: "Something went wrong. Please try again.",
+          });
       }
       reply.status(response.status);
       response.headers.forEach((value, key) => reply.header(key, value));
@@ -108,18 +154,13 @@ async function bootstrap() {
     (request as any).pilotStartedAt = process.hrtime.bigint();
     reply.header("x-request-id", request.id);
     const write = !["GET", "HEAD", "OPTIONS"].includes(request.method);
-    const safety =
-      /\/api\/journeys\/current\/(check-ins|arrive|complete|emergency)/.test(
-        request.url,
-      );
+    const safety = allowedDuringMaintenance(request.url);
     if (write && enabled("MAINTENANCE_MODE", false) && !safety)
-      return reply
-        .code(503)
-        .send({
-          code: "MAINTENANCE_MODE",
-          message:
-            "This action is temporarily unavailable. Please try again later.",
-        });
+      return reply.code(503).send({
+        code: "MAINTENANCE_MODE",
+        message:
+          "This action is temporarily unavailable. Please try again later.",
+      });
   });
   fastify.addHook("onResponse", async (request, reply) => {
     const started = (request as any).pilotStartedAt as bigint | undefined;
@@ -167,7 +208,10 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new SafeExceptionFilter());
   app.setGlobalPrefix("api");
-  await app.listen(Number(process.env.PORT ?? 4000), process.env.HOST ?? "127.0.0.1");
+  await app.listen(
+    Number(process.env.PORT ?? 4000),
+    process.env.HOST ?? "127.0.0.1",
+  );
 }
 try {
   await bootstrap();

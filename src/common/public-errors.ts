@@ -1,5 +1,9 @@
 // Reviewed literal application messages only; never echo arbitrary exception text.
 export const publicMessages = new Set([
+  "Circle is permanently locked. Approval cannot be withdrawn.",
+  "Circle membership or departure plan changed. Review the latest plan before approving.",
+  "Circle membership changed. Refresh and try again.",
+  "Create an active Journey share link before sharing a location",
   "A call-up document is required",
   "A current VERIFIED PCM posting is required",
   "A plan was matched concurrently",

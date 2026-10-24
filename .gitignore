@@ -12,6 +12,7 @@ test-results/
 .tmp-edge-cdp-2/
 DEPLOYMENT.md
 *.md
+!docs/EMAIL_FALLBACK.md
 .p2-e2e/
 .p22-e2e/
 
@@ -20,3 +21,49 @@ DEPLOYMENT.md
 .env.before-p2-e2e
 .p0-followup-backup/
 .p0-0010-backup/
+
+!docs/TEST_MODE.md
+
+
+# Dependencies and generated builds
+node_modules/
+dist/
+.next/
+.vinext/
+.cloudflare/
+.wrangler/
+coverage/
+*.tsbuildinfo
+
+# Environment files and backups
+.env*
+*.env
+!.env.example
+!.env.sample
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+
+# Private files and database backups
+private/
+playwright-report/
+test-results/
+.tmp-edge-cdp-2/
+*.log
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+*.swp
+!docs/CIRCLE_LOCK_APPROVALS.md
+
+uploads/
+
+*.dump
+
+*.backup
+
+*.sql.gz

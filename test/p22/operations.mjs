@@ -30,7 +30,7 @@ try{
       for(const item of current.checklist)await user('PATCH','/journeys/current/checklist/'+item.itemKey,{completed:true});
       await user('POST','/journeys/current/ready');await user('POST','/journeys/current/start');
     }
-    await db.query("update journey set last_check_in_at=now()-interval '3 hours' where id=$1",[current.journey.id]);
+    await db.query("update journey set started_at=now()-interval '3 hours',last_check_in_at=now()-interval '3 hours' where id=$1",[current.journey.id]);
     await job('process-journey-reminders');await job('process-journey-reminders');
     const {rows:[count]}=await db.query('select count(*)::int count from journey_reminder where journey_id=$1',[current.journey.id]);assert.equal(count.count,1);
     current=await user('GET','/journeys/current');assert.equal(current.journey.status,'IN_PROGRESS');

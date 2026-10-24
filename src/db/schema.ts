@@ -291,3 +291,20 @@ export const moderationCaseNotes=pgTable('moderation_case_note',{id:uuid().defau
 export const accountRestrictions=pgTable('account_restriction',{id:uuid().defaultRandom().primaryKey(),userId:uuid('user_id').notNull().references(()=>users.id,{onDelete:'restrict'}),restrictionType:accountRestrictionTypeEnum('restriction_type').notNull(),status:restrictionStatusEnum().default('ACTIVE').notNull(),reasonCode:text('reason_code').notNull(),reasonInternal:text('reason_internal'),appliedBy:uuid('applied_by').notNull().references(()=>users.id,{onDelete:'restrict'}),appliedAt:timestamp('applied_at',{withTimezone:true}).defaultNow().notNull(),expiresAt:timestamp('expires_at',{withTimezone:true}),revokedBy:uuid('revoked_by').references(()=>users.id,{onDelete:'restrict'}),revokedAt:timestamp('revoked_at',{withTimezone:true})},t=>[uniqueIndex('one_active_restriction_type_uq').on(t.userId,t.restrictionType).where(sql`${t.status}='ACTIVE'`),index('restriction_user_status_type_idx').on(t.userId,t.status,t.restrictionType),index('restriction_expiry_idx').on(t.status,t.expiresAt)]);
 
 export const userRelations = relations(users, ({ one, many }) => ({ profile: one(pcmProfiles), verifications: many(pcmVerifications), sessions: many(sessions) }));
+
+export const bugReports = pgTable('bug_report', {
+  id: uuid().defaultRandom().primaryKey(),
+  reporterUserId: uuid('reporter_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text().notNull(), description: text().notNull(), status: text().default('OPEN').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, t => [index('bug_report_created_idx').on(t.createdAt),
+  check('bug_report_status_check', sql`${t.status} IN ('OPEN','RESOLVED')`),
+  check('bug_report_text_check', sql`char_length(${t.title}) BETWEEN 5 AND 160 AND char_length(${t.description}) BETWEEN 10 AND 4000`)]);
+
+export const circleLockRequests = pgTable('circle_lock_request', {
+  travelCircleId: uuid('travel_circle_id').primaryKey().references(() => travelCircles.id, { onDelete: 'cascade' }),
+  snapshot: text().notNull(),
+  approvals: jsonb().$type<string[]>().default([]).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});

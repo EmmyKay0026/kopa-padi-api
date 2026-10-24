@@ -267,15 +267,15 @@ try {
     await fetch('http://127.0.0.1:4101/fail-on');
     await accounts.solo.call('POST','/journeys/current/share',{trustedContactId:randomUUID()},404);
     const {queueEmail,retryQueuedEmails}=await import('../../dist/src/email/email.service.js');
-    await queueEmail({userId:accounts.solo.id,to:'retry@p2.invalid',intent:'JOURNEY_SAFETY',subject:'Synthetic retry',text:'Controlled test only'});
+    await queueEmail({userId:accounts.solo.id,to:'retry@p2.invalid',intent:'PCM_APPROVED',subject:'Synthetic retry',text:'Controlled test only'});
     for(let attempt=0;attempt<100;attempt++) {
-      const {rows:[pending]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null");
+      const {rows:[pending]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null and attempts::int<5");
       if(pending.count>0)break;
       await new Promise(resolve=>setTimeout(resolve,100));
     }
-    const {rows:[failed]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null");assert.ok(failed.count>0);
+    const {rows:[failed]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null and attempts::int<5");assert.ok(failed.count>0);
     await fetch('http://127.0.0.1:4101/fail-off');await retryQueuedEmails(100);
-    const {rows:[remaining]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null");assert.equal(remaining.count,0);
+    const {rows:[remaining]}=await db.query("select count(*)::int count from notification_outbox where last_error is not null and sent_at is null and attempts::int<5");assert.equal(remaining.count,0);
   });
   persistState();
 } finally {

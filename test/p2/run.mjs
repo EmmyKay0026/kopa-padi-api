@@ -32,17 +32,20 @@ try {
   } else if (mode === 'web') {
     await command(['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3100'], { cwd: resolve(root, '../kopa-padi-web') });
   } else if (mode === 'sink') {
-    let accepted = 0, rejected = 0, fail = false;
+    let accepted = 0, rejected = 0, fail = false, hang = false, failStatus = 503;
     createServer(async (req, res) => {
       if (req.url === '/status') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ accepted, rejected, fail })); return; }
+      if (req.url === '/hang-on') { hang = true; res.end('controlled timeout enabled'); return; }
+      if (req.url === '/rate-limit-on') { fail = true; failStatus = 429; res.end('controlled rate limit enabled'); return; }
       if (req.url === '/fail-on') { fail = true; res.end('controlled failure enabled'); return; }
-      if (req.url === '/fail-off') { fail = false; res.end('controlled failure disabled'); return; }
+      if (req.url === '/fail-off') { fail = false; hang = false; failStatus = 503; res.end('controlled failure disabled'); return; }
       if (req.url !== '/email' || req.method !== 'POST') { res.writeHead(404).end(); return; }
       try {
         let text = ''; for await (const chunk of req) { text += chunk; if (text.length > 100000) throw new Error(); }
         const body = JSON.parse(text);
         assert.ok(body.to.length && body.to.every(row => /^[a-z0-9._+-]+@p2\.invalid$/i.test(row.email_address.address)));
-        if (fail) { res.writeHead(503).end(); return; }
+        if (hang) return;
+        if (fail) { res.writeHead(failStatus).end(); return; }
         accepted++; res.setHeader('content-type', 'application/json'); res.end('{"data":[]}');
       } catch { rejected++; res.writeHead(400).end(); }
     }).listen(4101, '127.0.0.1', () => console.log('P2 local-only email sink ready; payloads are not logged.'));

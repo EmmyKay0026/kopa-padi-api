@@ -1,3 +1,4 @@
+import { databaseOptions } from './src/config/database-options.js';
 import { defineConfig } from "drizzle-kit";
 import { config } from "dotenv";
 
@@ -13,10 +14,7 @@ export default defineConfig({
   dialect: "postgresql",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
-  dbCredentials: {
-    url: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_SSL === "true" ? "require" : false,
-  },
+  dbCredentials: { url: databaseOptions().connectionString!, ssl: databaseOptions().ssl },
   strict: true,
-  verbose: true,
+  verbose: false,
 });

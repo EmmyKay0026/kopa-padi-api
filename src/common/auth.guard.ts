@@ -21,6 +21,8 @@ export const VERIFIED_ROUTE = "verifiedRoute";
 export const VerifiedPCMOnly = () => SetMetadata(VERIFIED_ROUTE, true);
 export const CAPABILITY_ROUTE='capabilityRoute';
 export const RequiresCapability=(capability:string)=>SetMetadata(CAPABILITY_ROUTE,capability);
+export const OWNER_WITHDRAWAL_ROUTE='ownerWithdrawalRoute';
+export const OwnerWithdrawal=()=>SetMetadata(OWNER_WITHDRAWAL_ROUTE,true);
 export const SAFETY_ONLY_ROUTE='safetyOnlyRoute';
 export const SafetyOnlyAccess=()=>SetMetadata(SAFETY_ONLY_ROUTE,true);
 
@@ -49,10 +51,13 @@ export class AuthGuard implements CanActivate {
     if (!session) throw new UnauthorizedException("Authentication required");
     request.user = session.user as RequestUser;
     const user = request.user as RequestUser;
+    // Only explicitly decorated owner-scoped withdrawal/list routes bypass
+    // account/PCM restrictions. Services always constrain by session user ID.
+    const ownerWithdrawal = this.reflector.getAllAndOverride<boolean>(OWNER_WITHDRAWAL_ROUTE,[context.getHandler()]);
     const safetyOnly=this.reflector.getAllAndOverride<boolean>(SAFETY_ONLY_ROUTE,[context.getHandler(),context.getClass()]);
     const [activeSafetyJourney]=safetyOnly?await db.select({id:journeys.id}).from(journeys).where(and(eq(journeys.userId,user.id),inArray(journeys.status,['IN_PROGRESS','NEEDS_ATTENTION','ARRIVED']))).limit(1):[];
     if (user.accountStatus !== "ACTIVE") {
-      if(!activeSafetyJourney)throw new ForbiddenException("Account is not permitted to access this resource");
+      if(!activeSafetyJourney && !ownerWithdrawal)throw new ForbiddenException("Account is not permitted to access this resource");
     }
     if (
       this.reflector.getAllAndOverride<boolean>(ADMIN_ROUTE, [
@@ -76,7 +81,7 @@ export class AuthGuard implements CanActivate {
         .where(eq(pcmVerifications.userId, user.id))
         .orderBy(desc(pcmVerifications.updatedAt))
         .limit(1);
-      if (verification?.status !== "VERIFIED" && !activeSafetyJourney)
+      if (verification?.status !== "VERIFIED" && !activeSafetyJourney && !ownerWithdrawal)
         throw new ForbiddenException("PCM verification required");
     }
     return true;

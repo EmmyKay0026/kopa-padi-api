@@ -1,3 +1,4 @@
+import { invalidateCircleLockApprovals } from '../circles/circle-lock.js';
 import {
   ConflictException,
   ForbiddenException,
@@ -511,6 +512,7 @@ export class MatchingService {
             and(
               eq(travelCircles.id, circle.id),
               eq(travelCircles.memberCount, circle.memberCount),
+              inArray(travelCircles.status, [...OPEN_CIRCLES]),
               sql`${travelCircles.memberCount}+${chosen.length}<=${travelCircles.maxMembers}`,
             ),
           )
@@ -524,6 +526,7 @@ export class MatchingService {
             userId: plan.userId,
           })),
         );
+        await invalidateCircleLockApprovals(tx, circle.id);
         await tx
           .update(travelPlans)
           .set({ status: "IN_CIRCLE", updatedAt: new Date() })
@@ -1038,6 +1041,7 @@ export class MatchingService {
       )
       .returning();
     if (!changed) return null;
+    if (!circle.lockedAt && !["LOCKED", "IN_JOURNEY", "ARRIVED"].includes(circle.status)) await invalidateCircleLockApprovals(tx, circle.id);
     await circleSystemMessage(
       tx,
       circle.id,
@@ -1046,7 +1050,8 @@ export class MatchingService {
     );
     const next = circle.memberCount - 1;
     const afterCutoff =
-      circle.status === "LOCKED" ||
+      circle.lockedAt !== null ||
+      ["LOCKED", "IN_JOURNEY", "ARRIVED"].includes(circle.status) ||
       matchingIsClosed(circle.travelDate, circle.departureWindow);
     if (next <= 1) {
       const remaining = await tx
@@ -1098,7 +1103,7 @@ export class MatchingService {
       return { circleId: circle.id, status: "DISSOLVED", afterCutoff };
     }
     const status = afterCutoff
-      ? "LOCKED"
+      ? ["IN_JOURNEY", "ARRIVED"].includes(circle.status) ? circle.status : "LOCKED"
       : next >= 6
         ? "FULL"
         : next >= 3
@@ -1229,6 +1234,7 @@ export class MatchingService {
       travelPlanId: plan.id,
       userId: plan.userId,
     });
+    await invalidateCircleLockApprovals(tx, circle.id);
     await tx
       .update(travelPlans)
       .set({ status: "IN_CIRCLE", updatedAt: new Date() })

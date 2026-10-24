@@ -78,6 +78,20 @@
       "when": 1791975276401,
       "tag": "0010_case_insensitive_email",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792759671805,
+      "tag": "0011_bug_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792777259538,
+      "tag": "0012_circle_lock_approvals",
+      "breakpoints": true
     }
   ]
 }

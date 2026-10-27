@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { JOURNEY_CHECKIN_TYPES, LOCATION_SHARE_AUDIENCES } from '../domain.js';
+import { MAX_LOCATION_SHARE_MINUTES } from './journey.domain.js';
 const nullableMethod = z.string().trim().min(3).max(160).optional().nullable();
 export const contactSchema = z.object({ name: z.string().trim().min(2).max(100), relationship: z.string().trim().min(2).max(80), phone: nullableMethod.refine((v) => !v || /^\+?[0-9][0-9 ()-]{6,19}$/.test(v), 'Invalid phone number'), email: nullableMethod.refine((v) => !v || z.email().safeParse(v).success, 'Invalid email') }).strict().refine((v) => Boolean(v.phone || v.email), { message: 'Phone or email is required' });
 export const prepareSchema = z.object({ expectedArrivalAt: z.iso.datetime().optional() }).strict();
@@ -8,5 +9,6 @@ export const checkInSchema = z.object({ type: z.enum(JOURNEY_CHECKIN_TYPES).excl
 export const arriveSchema = z.object({ clientRequestId: z.string().uuid() }).strict();
 export const cancelSchema = z.object({ reason: z.string().trim().min(3).max(300) }).strict();
 export const shareSchema = z.object({ trustedContactId: z.string().uuid() }).strict();
-export const locationSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), audience: z.enum(LOCATION_SHARE_AUDIENCES), consent: z.literal(true) }).strict();
+export const sharedCheckInQuerySchema = z.object({ before: z.string().uuid().optional() }).strict();
+export const locationSchema = z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), audience: z.enum(LOCATION_SHARE_AUDIENCES), consent: z.literal(true), durationMinutes: z.number().int().min(1).max(MAX_LOCATION_SHARE_MINUTES).optional() }).strict();
 

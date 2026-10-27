@@ -19,14 +19,15 @@ export class VerificationController {
   async submit(@Req() req: AuthRequest) {
     const file = await req.file();
     if (!file || file.fieldname !== 'document') throw new BadRequestException('A call-up document is required');
+    const buffer = await file.toBuffer();
     const field = (name: string) => {
       const candidate = (file.fields as Record<string, { value?: unknown }>)[name];
       return typeof candidate?.value === 'string' ? candidate.value : '';
     };
-    const input = { nyscIntakeId: field('nyscIntakeId'), orientationCampId: field('orientationCampId') };
+    const input = { nyscIntakeId: field('nyscIntakeId'), orientationCampId: field('orientationCampId'), dateOfBirth: field('dateOfBirth'), matriculationNumber: field('matriculationNumber') };
     const parsed = await import('./verification.schemas.js').then(({ submitSchema }) => submitSchema.safeParse(input));
-    if (!parsed.success) throw new BadRequestException({ message: 'Invalid intake or camp', issues: parsed.error.issues });
-    return this.service.submit(req.user.id, parsed.data, { buffer: await file.toBuffer(), filename: file.filename });
+    if (!parsed.success) throw new BadRequestException({ message: 'Check your NYSC assignment, date of birth and matriculation number.', issues: parsed.error.issues });
+    return this.service.submit(req.user.id, parsed.data, { buffer, filename: file.filename });
   }
   @Get('verified-area') @VerifiedPCMOnly() verified() { return { message: 'Verified PCM access granted.' }; }
 

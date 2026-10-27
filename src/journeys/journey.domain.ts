@@ -5,3 +5,12 @@ export function assertJourneyTransition(from: JourneyStatus, to: JourneyStatus) 
 export const checklistItems = JOURNEY_CHECKLIST_ITEMS.map(([itemKey, label]) => ({ itemKey, label }));
 export function shareExpiry(now = new Date(), hours = Number(process.env.JOURNEY_SHARE_HOURS ?? 168)) { return new Date(now.getTime() + hours * 3_600_000); }
 
+export const MAX_LOCATION_SHARE_MINUTES = 1440;
+export function locationSharingPolicy() {
+  const configured = Number(process.env.JOURNEY_LOCATION_SHARE_MINUTES ?? 60);
+  return {
+    defaultDurationMinutes: Number.isInteger(configured) && configured >= 1 && configured <= MAX_LOCATION_SHARE_MINUTES ? configured : 60,
+    maxDurationMinutes: MAX_LOCATION_SHARE_MINUTES,
+  };
+}
+

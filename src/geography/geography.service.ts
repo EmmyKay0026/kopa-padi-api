@@ -11,6 +11,15 @@ type ProximityInput = { lgaAId: string; lgaBId: string; estimatedRoadMinutes: nu
 @Injectable()
 export class GeographyService implements CompatibilityDataSource {
   private readonly engine = new GeographyCompatibilityEngine(this);
+  async stateGuide(stateId: string) {
+    const [state] = await db.select({ id: states.id, name: states.name }).from(states).where(and(eq(states.id, stateId), eq(states.isActive, true)));
+    if (!state) throw new NotFoundException('State not found');
+    const [areas, camps] = await Promise.all([
+      db.select({ id: lgas.id, name: lgas.name }).from(lgas).where(and(eq(lgas.stateId, stateId), eq(lgas.isActive, true))).orderBy(asc(lgas.name)),
+      db.select({ id: orientationCamps.id, name: orientationCamps.campName, address: orientationCamps.officialAddress, lga: lgas.name, latitude: orientationCamps.latitude, longitude: orientationCamps.longitude, status: orientationCamps.status }).from(orientationCamps).leftJoin(lgas, eq(lgas.id, orientationCamps.lgaId)).where(and(eq(orientationCamps.stateId, stateId), inArray(orientationCamps.status, ['ACTIVE', 'TEMPORARY']))).orderBy(asc(orientationCamps.campName)),
+    ]);
+    return { state, lgas: areas, camps: camps.map(camp => ({ ...camp, latitude: camp.latitude === null ? null : Number(camp.latitude), longitude: camp.longitude === null ? null : Number(camp.longitude) })) };
+  }
   states() { return db.select().from(states).where(eq(states.isActive, true)).orderBy(asc(states.name)); }
   lgas(stateId: string) { return db.select().from(lgas).where(and(eq(lgas.stateId, stateId), eq(lgas.isActive, true))).orderBy(asc(lgas.name)); }
   towns(lgaId: string) { return db.select().from(towns).where(and(eq(towns.lgaId, lgaId), eq(towns.isActive, true))).orderBy(asc(towns.name)); }

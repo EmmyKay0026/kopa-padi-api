@@ -5,7 +5,7 @@ import { db } from '../db/database.js';
 import { circleMessages, domainOutbox, journeyCheckIns, journeyLocationShares, journeyReminders, journeySafetyChecklist, journeyShares, journeys, orientationCamps, pcmProfiles, notificationOutbox, travelCircleMembers, travelCircles, travelPlans, trustedContacts, users } from '../db/schema.js';
 import { enqueueEmail } from '../email/email.service.js';
 import { circleSystemMessage } from '../circles/circle-events.js';
-import { checklistItems, shareExpiry } from './journey.domain.js';
+import { checklistItems, locationSharingPolicy, shareExpiry } from './journey.domain.js';
 import { JourneyGuideResolver } from '../journey-guides/journey-guide.service.js';
 import { enabled } from '../config/runtime.js';
 
@@ -32,14 +32,15 @@ export class JourneyService {
   async current(userId: string, required = true): Promise<any | null> {
     const [journey] = await db.select().from(journeys).where(and(eq(journeys.userId, userId), inArray(journeys.status, [...ACTIVE_JOURNEYS]))).orderBy(desc(journeys.createdAt)).limit(1);
     if (!journey) { if (required) throw new NotFoundException('No active Journey'); return null; }
-    const [destination, checklist, contacts, checkIns, shares] = await Promise.all([
+    const [destination, checklist, contacts, checkIns, shares, trustedLocation, circleLocation] = await Promise.all([
       db.select({ name: orientationCamps.campName, address: orientationCamps.officialAddress }).from(orientationCamps).where(eq(orientationCamps.id, journey.destinationCampId)).limit(1).then((r) => r[0]),
       db.select().from(journeySafetyChecklist).where(eq(journeySafetyChecklist.journeyId, journey.id)).orderBy(asc(journeySafetyChecklist.itemKey)),
       db.select().from(trustedContacts).where(and(eq(trustedContacts.userId, userId), eq(trustedContacts.isActive, true))).orderBy(asc(trustedContacts.name)),
       db.select({ id: journeyCheckIns.id, type: journeyCheckIns.type, message: journeyCheckIns.message, createdAt: journeyCheckIns.createdAt }).from(journeyCheckIns).where(eq(journeyCheckIns.journeyId, journey.id)).orderBy(desc(journeyCheckIns.createdAt), desc(journeyCheckIns.id)).limit(20),
       db.select({ id: journeyShares.id, trustedContactId: journeyShares.trustedContactId, status: journeyShares.status, expiresAt: journeyShares.expiresAt }).from(journeyShares).where(eq(journeyShares.journeyId, journey.id)).orderBy(desc(journeyShares.createdAt)),
+      ...(['TRUSTED_CONTACT', 'CIRCLE'] as const).map(audience => db.select({ id: journeyLocationShares.id, audience: journeyLocationShares.audience, sharedAt: journeyLocationShares.sharedAt, expiresAt: journeyLocationShares.expiresAt }).from(journeyLocationShares).where(and(eq(journeyLocationShares.journeyId, journey.id), eq(journeyLocationShares.audience, audience))).orderBy(desc(journeyLocationShares.sharedAt), desc(journeyLocationShares.id)).limit(1)),
     ]);
-    return { journey, destination, checklist, contacts, checkIns, shares, emergencyNumbers: { general: process.env.NIGERIA_EMERGENCY_NUMBER ?? '112', road: process.env.NIGERIA_ROAD_EMERGENCY_NUMBER ?? '122' } };
+    return { journey, destination, checklist, contacts, checkIns, shares, locationShares: [...trustedLocation, ...circleLocation], locationSharing: locationSharingPolicy(), emergencyNumbers: { general: process.env.NIGERIA_EMERGENCY_NUMBER ?? '112', road: process.env.NIGERIA_ROAD_EMERGENCY_NUMBER ?? '122' } };
   }
 
   async checklist(userId: string, itemKey: string, completed: boolean) { const current = await this.current(userId); if (!['PREPARING', 'READY_TO_START'].includes(current.journey.status)) throw new ConflictException('Checklist is closed after Journey start'); const [row] = await db.update(journeySafetyChecklist).set({ completed, completedAt: completed ? new Date() : null }).where(and(eq(journeySafetyChecklist.journeyId, current.journey.id), eq(journeySafetyChecklist.itemKey, itemKey))).returning(); if (!row) throw new NotFoundException('Checklist item not found'); return row; }
@@ -104,9 +105,72 @@ export class JourneyService {
       .innerJoin(travelCircleMembers,and(eq(travelCircleMembers.userId,journeys.userId),eq(travelCircleMembers.travelCircleId,circleId),inArray(travelCircleMembers.membershipStatus,[...ACTIVE_MEMBERS])))
       .where(and(eq(journeys.travelCircleId,circleId),inArray(journeys.status,['IN_PROGRESS','NEEDS_ATTENTION']),eq(journeyLocationShares.audience,'CIRCLE'),gt(journeyLocationShares.expiresAt,new Date())));
   }
-  async publicShare(token: string) { const tokenHash = hashToken(token); const [row] = await db.select({ share: journeyShares, journey: journeys, user: users, profile: pcmProfiles, destination: orientationCamps }).from(journeyShares).innerJoin(journeys, eq(journeys.id, journeyShares.journeyId)).innerJoin(users, eq(users.id, journeys.userId)).innerJoin(trustedContacts,and(eq(trustedContacts.id,journeyShares.trustedContactId),eq(trustedContacts.userId,journeys.userId),eq(trustedContacts.isActive,true))).leftJoin(pcmProfiles, eq(pcmProfiles.userId, journeys.userId)).innerJoin(orientationCamps, eq(orientationCamps.id, journeys.destinationCampId)).where(and(eq(journeyShares.tokenHash, tokenHash), eq(journeyShares.status, 'ACTIVE'), gt(journeyShares.expiresAt, new Date()))).limit(1); if (!row) throw new NotFoundException('Journey share is invalid or expired'); const [checkIn] = await db.select({ type: journeyCheckIns.type, message: journeyCheckIns.message, createdAt: journeyCheckIns.createdAt }).from(journeyCheckIns).where(eq(journeyCheckIns.journeyId, row.journey.id)).orderBy(desc(journeyCheckIns.createdAt), desc(journeyCheckIns.id)).limit(1); const [location] = await db.select({ latitude: journeyLocationShares.latitude, longitude: journeyLocationShares.longitude, sharedAt: journeyLocationShares.sharedAt, expiresAt: journeyLocationShares.expiresAt }).from(journeyLocationShares).where(and(eq(journeyLocationShares.journeyId, row.journey.id), eq(journeyLocationShares.audience, 'TRUSTED_CONTACT'), gt(journeyLocationShares.expiresAt, new Date()))).orderBy(desc(journeyLocationShares.sharedAt)).limit(1); await db.update(journeyShares).set({ lastViewedAt: new Date() }).where(eq(journeyShares.id, row.share.id)); return { shareExpiresAt: row.share.expiresAt, travellerName: row.profile?.displayName ?? row.user.name.split(' ')[0], status: row.journey.status, destination: row.destination.campName, expectedArrivalAt: row.journey.expectedArrivalAt, lastCheckIn: checkIn ?? null, currentLocation: location ?? null }; }
+  private async publicShareContext(token: string) {
+    const [row] = await db.select({ share: journeyShares, journey: journeys, user: users, profile: pcmProfiles, destination: orientationCamps })
+      .from(journeyShares)
+      .innerJoin(journeys, eq(journeys.id, journeyShares.journeyId))
+      .innerJoin(users, eq(users.id, journeys.userId))
+      .innerJoin(trustedContacts, and(eq(trustedContacts.id, journeyShares.trustedContactId), eq(trustedContacts.userId, journeys.userId), eq(trustedContacts.isActive, true)))
+      .leftJoin(pcmProfiles, eq(pcmProfiles.userId, journeys.userId))
+      .innerJoin(orientationCamps, eq(orientationCamps.id, journeys.destinationCampId))
+      .where(and(eq(journeyShares.tokenHash, hashToken(token)), eq(journeyShares.status, 'ACTIVE'), gt(journeyShares.expiresAt, new Date())))
+      .limit(1);
+    if (!row) throw new NotFoundException('Journey share is invalid or expired');
+    return row;
+  }
 
-  async shareLocation(userId: string, input: { latitude: number; longitude: number; audience: 'TRUSTED_CONTACT'|'CIRCLE' }) {
+  private async sharedCheckIns(journeyId: string, before?: string) {
+    if (before) {
+      const [cursor] = await db.select({ id: journeyCheckIns.id }).from(journeyCheckIns)
+        .where(and(eq(journeyCheckIns.journeyId, journeyId), eq(journeyCheckIns.id, before))).limit(1);
+      if (!cursor) throw new BadRequestException('Invalid check-in cursor');
+    }
+    // Compare against the stored timestamp to retain PostgreSQL's full precision.
+    const boundary = before
+      ? sql<boolean>`(${journeyCheckIns.createdAt}, ${journeyCheckIns.id}) < (select checkin_cursor.created_at, checkin_cursor.id from journey_check_in checkin_cursor where checkin_cursor.id = ${before} and checkin_cursor.journey_id = ${journeyId})`
+      : undefined;
+    const rows = await db.select({ id: journeyCheckIns.id, type: journeyCheckIns.type, message: journeyCheckIns.message, createdAt: journeyCheckIns.createdAt })
+      .from(journeyCheckIns)
+      .where(and(eq(journeyCheckIns.journeyId, journeyId), boundary))
+      .orderBy(desc(journeyCheckIns.createdAt), desc(journeyCheckIns.id))
+      .limit(21);
+    const items = rows.slice(0, 20);
+    return { items, nextCursor: rows.length > 20 ? items.at(-1)!.id : null };
+  }
+
+  async publicShare(token: string) {
+    const row = await this.publicShareContext(token);
+    const [checkInHistory, locations] = await Promise.all([
+      this.sharedCheckIns(row.journey.id),
+      db.select({ latitude: journeyLocationShares.latitude, longitude: journeyLocationShares.longitude, sharedAt: journeyLocationShares.sharedAt, expiresAt: journeyLocationShares.expiresAt })
+        .from(journeyLocationShares)
+        .where(and(eq(journeyLocationShares.journeyId, row.journey.id), eq(journeyLocationShares.audience, 'TRUSTED_CONTACT'), gt(journeyLocationShares.expiresAt, new Date())))
+        .orderBy(desc(journeyLocationShares.sharedAt)).limit(1),
+    ]);
+    await db.update(journeyShares).set({ lastViewedAt: new Date() }).where(eq(journeyShares.id, row.share.id));
+    return {
+      shareExpiresAt: row.share.expiresAt,
+      travellerName: row.profile?.displayName ?? row.user.name.split(' ')[0],
+      status: row.journey.status,
+      destination: row.destination.campName,
+      expectedArrivalAt: row.journey.expectedArrivalAt,
+      lastCheckIn: checkInHistory.items[0] ?? null,
+      checkInHistory,
+      currentLocation: locations[0] ?? null,
+    };
+  }
+
+  async publicCheckIns(token: string, before?: string) {
+    const row = await this.publicShareContext(token);
+    const page = await this.sharedCheckIns(row.journey.id, before);
+    await db.update(journeyShares).set({ lastViewedAt: new Date() }).where(eq(journeyShares.id, row.share.id));
+    return page;
+  }
+
+  async shareLocation(userId: string, input: { latitude: number; longitude: number; audience: 'TRUSTED_CONTACT'|'CIRCLE'; durationMinutes?: number }) {
+    const policy = locationSharingPolicy();
+    const durationMinutes = input.durationMinutes ?? policy.defaultDurationMinutes;
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > policy.maxDurationMinutes) throw new BadRequestException('Invalid location sharing duration');
     return db.transaction(async tx => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`journey-location:${userId}`}))`);
       const [journey] = await tx.select().from(journeys).where(and(eq(journeys.userId,userId),inArray(journeys.status,['IN_PROGRESS','NEEDS_ATTENTION']))).limit(1);
@@ -120,7 +184,7 @@ export class JourneyService {
         const [recipient] = await tx.select({id:journeyShares.id}).from(journeyShares).innerJoin(trustedContacts,eq(trustedContacts.id,journeyShares.trustedContactId)).where(and(eq(journeyShares.journeyId,journey.id),eq(journeyShares.status,'ACTIVE'),gt(journeyShares.expiresAt,new Date()),eq(trustedContacts.userId,userId),eq(trustedContacts.isActive,true))).limit(1);
         if (!recipient) throw new ConflictException('Create an active Journey share link before sharing a location');
       }
-      const expiresAt=new Date(Date.now()+Number(process.env.JOURNEY_LOCATION_SHARE_MINUTES??60)*60_000);
+      const expiresAt=new Date(Date.now()+durationMinutes*60_000);
       // Only the newest explicit consent per audience remains readable.
       await tx.update(journeyLocationShares).set({expiresAt:new Date()}).where(and(eq(journeyLocationShares.journeyId,journey.id),eq(journeyLocationShares.audience,input.audience),gt(journeyLocationShares.expiresAt,new Date())));
       const [row]=await tx.insert(journeyLocationShares).values({journeyId:journey.id,latitude:String(input.latitude),longitude:String(input.longitude),audience:input.audience,expiresAt}).returning();

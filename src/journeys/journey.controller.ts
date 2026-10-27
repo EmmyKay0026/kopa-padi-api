@@ -1,8 +1,8 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { AdminOnly, OwnerWithdrawal, Public, RequestUser, SafetyOnlyAccess, VerifiedPCMOnly } from '../common/auth.guard.js';
 import { ZodPipe } from '../common/zod.pipe.js';
-import { arriveSchema, cancelSchema, checkInSchema, checklistSchema, contactSchema, locationSchema, prepareSchema, shareSchema } from './journey.schemas.js';
+import { arriveSchema, cancelSchema, checkInSchema, checklistSchema, contactSchema, locationSchema, prepareSchema, shareSchema, sharedCheckInQuerySchema } from './journey.schemas.js';
 import { JourneyService } from './journey.service.js';
 type AuthRequest = FastifyRequest & { user: RequestUser };
 
@@ -40,6 +40,12 @@ export class TrustedContactController {
 }
 
 @Controller('journey-share') @Public()
-export class JourneyShareController { constructor(private readonly journeys: JourneyService) {} @Get(':token') view(@Param('token') token: string) { return this.journeys.publicShare(token); } }
+export class JourneyShareController {
+  constructor(private readonly journeys: JourneyService) {}
+  @Get(':token') view(@Param('token') token: string) { return this.journeys.publicShare(token); }
+  @Get(':token/check-ins') checkIns(@Param('token') token: string, @Query(new ZodPipe(sharedCheckInQuerySchema)) query: { before?: string }) {
+    return this.journeys.publicCheckIns(token, query.before);
+  }
+}
 @Controller('admin/journeys') @AdminOnly()
 export class JourneyAdminController { constructor(private readonly journeys: JourneyService) {} @Get('metrics') metrics() { return this.journeys.metrics(); } }

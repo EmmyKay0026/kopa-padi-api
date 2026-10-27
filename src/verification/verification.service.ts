@@ -5,6 +5,8 @@ import { auditLogs, nyscIntakes, orientationCamps, pcmProfiles, pcmVerifications
 import { assertTransition, VerificationStatus } from '../domain.js';
 import { EmailService } from '../email/email.service.js';
 import { PrivateStorageService } from './storage.service.js';
+import { activeIntake, INTAKE_CHANGED, lockActiveIntake } from '../intakes/intake.domain.js';
+import type { VerificationSubmission } from './verification.schemas.js';
 
 @Injectable()
 export class VerificationService {
@@ -24,8 +26,8 @@ export class VerificationService {
     return profile;
   }
   async catalog() {
-    const [intakes, camps] = await Promise.all([db.select().from(nyscIntakes).where(eq(nyscIntakes.status, 'ACTIVE')), db.select().from(orientationCamps).where(inArray(orientationCamps.status, ['ACTIVE','TEMPORARY']))]);
-    return { intakes, camps };
+    const [intake, camps] = await Promise.all([activeIntake(), db.select().from(orientationCamps).where(inArray(orientationCamps.status, ['ACTIVE','TEMPORARY']))]);
+    return { intakes: intake ? [intake] : [], activeIntake: intake, camps };
   }
   async status(userId: string) {
     const [row] = await db.select({ verification: pcmVerifications, intake: nyscIntakes, camp: orientationCamps })
@@ -33,19 +35,24 @@ export class VerificationService {
       .where(eq(pcmVerifications.userId, userId)).orderBy(desc(pcmVerifications.updatedAt)).limit(1);
     return row ?? { verification: { status: 'UNVERIFIED' } };
   }
-  async submit(userId: string, input: { nyscIntakeId: string; orientationCampId: string }, file: { buffer: Buffer; filename: string }) {
-    const [[profile], [intake], [camp], [current]] = await Promise.all([
-      db.select().from(pcmProfiles).where(eq(pcmProfiles.userId, userId)).limit(1), db.select().from(nyscIntakes).where(and(eq(nyscIntakes.id, input.nyscIntakeId), eq(nyscIntakes.status, 'ACTIVE'))).limit(1),
+  async submit(userId: string, input: VerificationSubmission, file: { buffer: Buffer; filename: string }) {
+    const [[profile], intake, [camp], [current]] = await Promise.all([
+      db.select().from(pcmProfiles).where(eq(pcmProfiles.userId, userId)).limit(1), activeIntake(),
       db.select().from(orientationCamps).where(and(eq(orientationCamps.id, input.orientationCampId), inArray(orientationCamps.status, ['ACTIVE','TEMPORARY']))).limit(1), db.select().from(pcmVerifications).where(eq(pcmVerifications.userId, userId)).orderBy(desc(pcmVerifications.updatedAt)).limit(1),
     ]);
     if (!profile) throw new ConflictException('Complete your PCM profile first');
-    if (!intake || !camp) throw new NotFoundException('Active intake or camp not found');
+    if (!current && (!intake || intake.id !== input.nyscIntakeId)) throw new ConflictException(INTAKE_CHANGED);
+    if (current && (current.nyscIntakeId !== input.nyscIntakeId || current.orientationCampId !== input.orientationCampId)) throw new ConflictException('Your existing NYSC assignment must be preserved when resubmitting.');
+    if (!camp) throw new NotFoundException('Active intake or camp not found');
     const from = (current?.status ?? 'UNVERIFIED') as VerificationStatus;
     assertTransition(from, 'SUBMITTED');
     let verificationId = current?.id ?? crypto.randomUUID();
     const stored = await this.storage.store(verificationId, file.buffer, file.filename);
     try {
       const verification = await db.transaction(async (tx) => {
+        await lockActiveIntake(tx);
+        const active = await activeIntake(tx);
+        if (!current && (!active || active.id !== input.nyscIntakeId)) throw new ConflictException(INTAKE_CHANGED);
         let updated;
         if (current) {
           [updated] = await tx.update(pcmVerifications).set({ ...input, status: 'SUBMITTED', submittedAt: new Date(), reviewedAt: null, reviewedBy: null, rejectionReasonCode: null, userSafeReason: null, reviewNotesPrivate: null, updatedAt: new Date() }).where(and(eq(pcmVerifications.id, current.id), eq(pcmVerifications.status, 'RESUBMISSION_REQUIRED'))).returning();

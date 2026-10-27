@@ -28,6 +28,7 @@ import {
 } from "./config/http-security.js";
 import { allowedDuringMaintenance } from "./config/maintenance.js";
 import { enabled, validateEnvironment } from "./config/runtime.js";
+import { normalizeGoogleAuthLocation, normalizeGoogleAuthRequest } from "./config/google-auth-redirects.js";
 import { pool } from "./db/database.js";
 
 async function bootstrap() {
@@ -118,7 +119,9 @@ async function bootstrap() {
           message: "Registration is temporarily unavailable.",
         });
       const origin = `${request.protocol}://${request.headers.host}`;
-      const body = request.body ? JSON.stringify(request.body) : undefined;
+      const authURL = process.env.BETTER_AUTH_URL ?? "http://localhost:4000";
+      const authBody = normalizeGoogleAuthRequest(request.url, request.body, webOrigin, authURL);
+      const body = authBody ? JSON.stringify(authBody) : undefined;
       const response = await withErrorContext(request, () =>
         auth.handler(
           new Request(new URL(request.url, origin), {
@@ -146,7 +149,9 @@ async function bootstrap() {
           });
       }
       reply.status(response.status);
-      response.headers.forEach((value, key) => reply.header(key, value));
+      response.headers.forEach((value, key) => reply.header(key, key === "location"
+        ? normalizeGoogleAuthLocation(request.url, value, webOrigin, authURL)
+        : value));
       return reply.send(Buffer.from(await response.arrayBuffer()));
     },
   });

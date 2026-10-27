@@ -21,6 +21,7 @@ import {
 import { calculateExpiry } from "./travel-plan.domain.js";
 import { MatchingService } from "../matching/matching.service.js";
 import { enabled } from '../config/runtime.js';
+import { activeIntake, INTAKE_MISMATCH, lockActiveIntake, NO_ACTIVE_INTAKE } from '../intakes/intake.domain.js';
 type Input = {
   destinationCampId: string;
   originStateId: string;
@@ -79,6 +80,10 @@ export class TravelPlanService {
     const now = new Date();
     try {
       await db.transaction(async (tx) => {
+        await lockActiveIntake(tx);
+        const active = await activeIntake(tx);
+        if (!active) throw new ConflictException(NO_ACTIVE_INTAKE);
+        if (verification.pcm_verification.nyscIntakeId !== active.id) throw new ConflictException(INTAKE_MISMATCH);
         await tx
           .insert(travelPlans)
           .values({

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import { AdminOnly } from '../common/auth.guard.js';
+import { AdminOnly, Public } from '../common/auth.guard.js';
 import { ZodPipe } from '../common/zod.pipe.js';
 import { campSchema, compatibilityQuerySchema, coverageSchema, hubSchema, proximitySchema } from './geography.schemas.js';
 import { GeographyService } from './geography.service.js';
@@ -7,6 +7,8 @@ import { GeographyService } from './geography.service.js';
 @Controller()
 export class GeographyController {
   constructor(private readonly geography: GeographyService) {}
+  @Public()
+  @Get('state-guides/:stateId/geography') stateGuide(@Param('stateId') stateId: string) { return this.geography.stateGuide(stateId); }
   @Get('locations/states') states() { return this.geography.states(); }
   @Get('locations/states/:stateId/lgas') lgas(@Param('stateId') stateId: string) { return this.geography.lgas(stateId); }
   @Get('locations/lgas/:lgaId/towns') towns(@Param('lgaId') lgaId: string) { return this.geography.towns(lgaId); }

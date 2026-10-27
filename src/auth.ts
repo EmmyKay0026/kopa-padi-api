@@ -3,6 +3,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import "./config/environment.js";
 import { validateEnvironment } from "./config/runtime.js";
+import { googleSocialProviders } from "./config/google-auth.js";
 import { db } from "./db/database.js";
 import * as schema from "./db/schema.js";
 import { queueEmail } from "./email/email.service.js";
@@ -38,6 +39,7 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: [process.env.WEB_URL ?? "http://localhost:3000"],
+  socialProviders: googleSocialProviders(),
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: {

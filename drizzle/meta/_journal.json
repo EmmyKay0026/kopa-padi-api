@@ -92,6 +92,27 @@
       "when": 1792777259538,
       "tag": "0012_circle_lock_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793003606610,
+      "tag": "0013_single_active_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793011502044,
+      "tag": "0014_state_guide_content",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793034867940,
+      "tag": "0015_verification_senate_details",
+      "breakpoints": true
     }
   ]
 }

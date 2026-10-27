@@ -55,6 +55,7 @@ async function register(name) {
 async function submit(user) {
   await user.call('PUT', '/me/profile', { firstName: 'Synthetic', lastNamePrivate: user.name, displayName: `P2 ${user.name}` });
   const form = new FormData(); form.set('nyscIntakeId', intake.id); form.set('orientationCampId', camp.id);
+  form.set('dateOfBirth', '2000-02-29'); form.set('matriculationNumber', '001/ENG/2020');
   form.set('document', new Blob([document], { type: 'image/png' }), 'synthetic-callup.png');
   const { data } = await user.call('POST', '/verification', form);
   user.verificationId = data.id; return data;

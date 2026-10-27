@@ -6,7 +6,7 @@ import { db, pool } from './database.js';
 import { adminCapabilityGrants, nyscIntakes, orientationCamps, users } from './schema.js';
 
 async function seed() {
-  await db.insert(nyscIntakes).values({ serviceYear: '2026', batch: 'Batch B', stream: 'Stream 1', status: 'ACTIVE' }).onConflictDoNothing();
+  await db.insert(nyscIntakes).values({ serviceYear: '2026', batch: 'Batch B', stream: 'Stream 1', status: 'UPCOMING' }).onConflictDoNothing();
   await db.insert(orientationCamps).values([
     { stateName: 'Lagos', campName: 'NYSC Permanent Orientation Camp, Iyana Ipaja', lgaName: 'Agege', status: 'ACTIVE' },
     { stateName: 'Ogun', campName: 'NYSC Permanent Orientation Camp, Sagamu', lgaName: 'Sagamu', status: 'ACTIVE' },

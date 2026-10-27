@@ -2,6 +2,10 @@ import { CircleLockService } from './circles/circle-lock.js';
 import { BugReportsController } from './bug-reports/bug-reports.controller.js';
 import { BugReportsService } from './bug-reports/bug-reports.service.js';
 import { Module } from "@nestjs/common";
+import { IntakeAdminController, IntakeController } from './intakes/intake.controller.js';
+import { IntakeService } from './intakes/intake.service.js';
+import { StateGuideAdminController, StateGuideController } from './state-guides/state-guide.controller.js';
+import { StateGuideService } from './state-guides/state-guide.service.js';
 import { APP_GUARD } from "@nestjs/core";
 import { CircleLifecycleService } from "./circles/circle-lifecycle.service.js";
 import {
@@ -47,6 +51,10 @@ import { VerificationService } from "./verification/verification.service.js";
 
 @Module({
   controllers: [
+    StateGuideAdminController,
+    StateGuideController,
+    IntakeAdminController,
+    IntakeController,
     BugReportsController,
     VerificationController,
     GeographyController,
@@ -66,6 +74,8 @@ import { VerificationService } from "./verification/verification.service.js";
     OperationsController,
   ],
   providers: [
+    StateGuideService,
+    IntakeService,
     CircleLockService,
     BugReportsService,
     EmailService,
